@@ -44,56 +44,10 @@ def build_A_matrix(order, nx, ny, dt):
 
     if order >= nx or order >= ny:
         raise ValueError("Order of the stencil is too large for the grid size")
-        n_blocks = 7  # Total number of blocks (rows and columns)
-block_size = n  # Size of each block
 
-# Predefine blocks
-D1 = csc_matrix(np.diag(np.random.rand(block_size)))
-D2 = csc_matrix(np.diag(np.random.rand(block_size)))
-D3 = csc_matrix(np.diag(np.random.rand(block_size)))
-B_blocks = [B1, B2, B3, B4, B5, B6, B7, B8, B9, B10]
-Y_blocks = [Y1, Y2]
-Zero = csc_matrix((block_size, block_size))
 
-blocks = []
-for i in range(n_blocks):
-    row_blocks = []
-    for j in range(n_blocks):
-        if i == j:
-            # Diagonal blocks
-            if i in [0, n_blocks - 1]:
-                row_blocks.append(D1)
-            elif i in [1, n_blocks - 2]:
-                row_blocks.append(D2)
-            else:
-                row_blocks.append(D3)
-        elif i == 0 and 1 <= j <= 5:
-            # First row, B blocks
-            row_blocks.append(B_blocks[j - 1])
-        elif i == 1 and 0 <= j <= 5:
-            # Second row, B blocks
-            row_blocks.append(B_blocks[5 + j])
-        elif 2 <= i <= n_blocks - 3 and abs(i - j) <= 2:
-            # Middle rows, Y blocks
-            if abs(i - j) == 1:
-                row_blocks.append(Y1)
-            elif abs(i - j) == 2:
-                row_blocks.append(Y2)
-            else:
-                row_blocks.append(D3)
-        elif i == n_blocks - 2 and 1 <= j <= 6:
-            # Second last row, B blocks
-            row_blocks.append(B_blocks[5 + (n_blocks - j - 1)])
-        elif i == n_blocks - 1 and 0 <= j <= 5:
-            # Last row, B blocks
-            row_blocks.append(B_blocks[j])
-        else:
-            # Zero blocks
-            row_blocks.append(Zero)
-    blocks.append(row_blocks)
 
-    A = bmat(blocks, format='csc')
-    return A
+
 
 def radiator_def(nx, ny, num=1):
     X, Y = np.meshgrid(np.linspace(0, 1, ny), np.linspace(0, 1, nx))
