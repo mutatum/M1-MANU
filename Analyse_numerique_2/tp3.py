@@ -3,8 +3,8 @@ import numpy as np
 import visualization as vis
 import math
 import matplotlib.pyplot as plt
-from scipy.sparse import diags, eye, csc_array, kron
-from scipy.sparse.linalg import splu, svds
+from scipy.sparse import eye, lil_array, csc_array
+from scipy.sparse.linalg import splu
 
 
 def CoefDF(k, xbar, x):
@@ -38,40 +38,73 @@ def CoefDF(k, xbar, x):
 def build_A_matrix(order, nx, ny, dt, D):
     if order % 2:
         raise ValueError("Order must be even for number of points to be odd")
+    if nx < order + 2 or ny < order + 2:
+        raise ValueError("Grid too small for order of FD scheme")
+    n_side = order//2
 
-    n_virtuals = order // 2
     dx = 1.0 / (nx - 1)
     dy = 1.0 / (ny - 1)
 
-    # Compute normalized coefficients
-    coefs = CoefDF(2, 0, np.linspace(-n_virtuals, n_virtuals, 1 + order))
-    coefsx = D * (dt / dx**2) * coefs
-    coefsy = D * (dt / dy**2) * coefs
+    factor_x = D * dt / dx**2
+    factor_y = D * dt / dy**2
 
-    # Construct 1D operators
-    Dx = diags(
-        coefsx,
-        offsets=np.arange(-n_virtuals, n_virtuals + 1),
-        shape=(nx + order, nx + order),
-    )
-    Dy = diags(
-        coefsy,
-        offsets=np.arange(-n_virtuals, n_virtuals + 1),
-        shape=(ny + order, ny + order),
-    )
+    # Center coefficients
+    coeffs_centered = CoefDF(2, 0.5, np.linspace(0, 1, order + 1))
 
-    # Assemble 2D sparse Laplacian using Kronecker product
-    Ix = eye(nx + order, format="csc")
-    Iy = eye(ny + order, format="csc")
-    A = kron(Dx, Iy, format="csc") + kron(Ix, Dy, format="csc")
+    # bcs = boundaries coefficients
+    # 2 + order because decentered FD scheme needs an additional point to reach order
+    bcs = [CoefDF(2, i, np.arange(0, order + 2)) for i in range(n_side)]
+    print("bcs", len(bcs), len(bcs[0]))
 
-    # Add identity for implicit time-stepping
-    I = eye((nx + order) * (ny + order), format="csc")
-    # plt.spy(A, markersize=1)
-    # plt.title("Sparsity Pattern of A")
-    # plt.show()
-    return csc_array(I - A)
+    A = lil_array((nx * ny, nx * ny), dtype=float)
 
+    print("nx, ny", nx, ny, nx*ny)
+    for i in range(nx*ny):
+        ix = i // ny
+        iy = i % ny
+        if iy < n_side:
+            # print("condition start X")
+            coeffs_y_start = bcs[iy]
+            # print("coeffs_y_start", coeffs_y_start.size)
+            for j, coeff in enumerate(coeffs_y_start):
+                # print("access", i, ix*ny+iy+j, "value", factor_y * bcs[iy][j], "j", j)
+                A[i, ix*ny + j] += coeff * factor_y
+        elif iy >= ny - n_side:
+            # print("condition end X")
+            dist = iy - ny + n_side
+            coeffs_y_end = bcs[::-1][dist][::-1]
+            for j, coeff in enumerate(coeffs_y_end):
+                A[i, (ix+1)*ny + j - len(coeffs_y_end)] += coeff * factor_y
+                # print("dist", dist, "access", i, i+j -order-1, "value", factor_y * bcs[dist][-j], "j", j)
+        else:
+            # print("condition center X")
+            # print("coeffs_centered", coeffs_centered*factor_y)
+            for j, coeff in enumerate(coeffs_centered):
+                A[i, ix*ny+iy +j -n_side] += coeff * factor_y
+        if ix < n_side:
+            # print("condition start Y")
+            coeffs_x_start = bcs[ix]
+            for j, coeff in enumerate(coeffs_x_start):
+                # print("access", i, (ix+j)*ny+iy, (ix+j), "value", coeff * factor_x)
+                A[i, j*ny + iy] += coeff * factor_x
+        elif ix >= nx - n_side:
+            # print(nx*ny-n_side*ny)
+            dist = ix - nx + n_side
+            # print(i, ix, iy, nx, ny, dist)
+            coeffs_x_end = bcs[::-1][dist][::-1]
+            # print("condition end Y")
+            for j, coeff in enumerate(coeffs_x_end):
+                # print("access", i, i-order-1+j*ny,(ix+j-(len(coeffs_x_end)-1))*ny)
+                A[i, (j-len(coeffs_x_end))*ny + iy] += coeff * factor_x
+        else:
+            # print("condition center Y")
+            for j, coeff in enumerate(coeffs_centered):
+                # print("i, j", ix, j, "n_side", n_side, 'access', i, i+(j-n_side)*ny, (ix + j - n_side)*ny + iy)
+                A[i, (ix + j - n_side)*ny + iy] += coeff * factor_x
+
+    # spy(A) visualisation de la matrice
+    I = eye(nx * ny, format="lil")
+    return csc_array((I - A))
 
 def radiator_def(nx, ny, num=1):
     X, Y = np.meshgrid(np.linspace(0, 1, ny), np.linspace(0, 1, nx))
@@ -123,7 +156,7 @@ def heat_equation_2d(
     # Initialize temperature field
     U = T_int * np.ones((nx, ny), dtype=float)
 
-    radiator = radiator_def(nx, ny, 4)
+    radiator = radiator_def(nx, ny, 2)
 
     window = window_def(nx, ny)
     U[window] = T_ext
@@ -154,21 +187,18 @@ def heat_equation_2d(
             dt = T - t
             A = build_A_matrix(order=space_order, nx=nx, ny=ny, dt=dt,D=D)
             lu = splu(A)
+
         # Radiator heating
         phi[radiator] = (T_rad - U_prev[radiator]) ** 2 * (T_rad - U[radiator])
 
-        n_virtuals = space_order // 2
-        Uflataugmented = np.pad(U, n_virtuals, mode="reflect").flatten()
-        phiflataugmented = np.pad(phi, n_virtuals, mode="constant").flatten()
+        Uflat= U.flatten()
+        phiflat= phi.flatten()
 
-        U = lu.solve(Uflataugmented
-                    # + D * phiflataugmented
+        U = lu.solve(Uflat
+                    + D * phiflat
                 ).reshape(
-            (nx + space_order, ny + space_order)
-        )[n_virtuals:-n_virtuals, n_virtuals:-n_virtuals]
-        # 
-        # Handle points one away from edges using 4th order FD for Laplacian
-        # Calculate coefficients for second derivative
+            (nx, ny)
+        )
 
         U[0, 1:-1] = U[1 : space_order + 1, 1:-1].T @ BC_coefs  # bottom
         U[-1, 1:-1] = U[-space_order - 1 : -1, 1:-1].T @ BC_coefs[::-1]  # top
@@ -188,10 +218,6 @@ def heat_equation_2d(
         U[-1,-1] = .5 * (U[-space_order-1:-1,-1] @ corner_coefs[::-1] + U[-1,-2:-space_order-2:-1] @ corner_coefs)
 
         
-        # U[0, 0] = 0.5 * (U[1, 0] + U[0, 1])
-        # U[0, -1] = 0.5 * (U[0, -2] + U[1, -1])
-        # U[-1, 0] = 0.5 * (U[-1, 1] + U[-2, 0])
-        # U[-1, -1] = 0.5 * (U[-1, -2] + U[-2, -1])
         U[window] = T_ext
 
         t += dt
@@ -215,7 +241,7 @@ if __name__ == "__main__":
 
     nx = 40
     ny = 40
-    T = 400000.0
+    T = 40000.0
     CFL = 0.9
     D = 2.2e-5 # D is the thermal diffusivity in m^2/s
     T_ext = 5.0
@@ -241,3 +267,5 @@ if __name__ == "__main__":
     print("Mean temperature: ", np.mean(solution))
     print("Standard deviation: ", np.std(solution))
     vis.plot_interactive(history, np.linspace(0, 1, nx), np.linspace(0, 1, ny))
+
+# %%
