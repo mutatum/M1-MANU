@@ -48,13 +48,13 @@ def build_A_matrix(order, nx, ny, dt, D):
     factor_x = D * dt / dx**2
     factor_y = D * dt / dy**2
 
-    # Center coefficients
     coeffs_centered = CoefDF(2, 0.5, np.linspace(0, 1, order + 1))
+    # print(coeffs_centered)
 
     # bcs = boundaries coefficients
     # 2 + order because decentered FD scheme needs an additional point to reach order
     bcs = [CoefDF(2, i, np.arange(0, order + 2)) for i in range(n_side)]
-    print("bcs", len(bcs), len(bcs[0]))
+    # print("bcs", len(bcs), len(bcs[0]))
 
     A = lil_array((nx * ny, nx * ny), dtype=float)
 
@@ -62,44 +62,46 @@ def build_A_matrix(order, nx, ny, dt, D):
     for i in range(nx*ny):
         ix = i // ny
         iy = i % ny
+        # print("i, ix, iy", i, ix, iy)
         if iy < n_side:
             # print("condition start X")
-            coeffs_y_start = bcs[iy]
+            coeffs_y_start = CoefDF(2, iy, np.arange(0, order + 2)) * factor_y
             # print("coeffs_y_start", coeffs_y_start.size)
             for j, coeff in enumerate(coeffs_y_start):
-                # print("access", i, ix*ny+iy+j, "value", factor_y * bcs[iy][j], "j", j)
-                A[i, ix*ny + j] += coeff * factor_y
+                # print('\t access', i, ix*ny + j, "value", coeff)
+                A[i, ix*ny + j] += coeff
         elif iy >= ny - n_side:
             # print("condition end X")
-            dist = iy - ny + n_side
-            coeffs_y_end = bcs[::-1][dist][::-1]
+            coeffs_y_end = CoefDF(2, order+2+iy-ny, np.arange(0, order + 2)) * factor_y
+            # print(order+2+iy-ny, np.arange(0, order + 2))
+            # print("coeffs_y_end", len(coeffs_y_end))
             for j, coeff in enumerate(coeffs_y_end):
-                A[i, (ix+1)*ny + j - len(coeffs_y_end)] += coeff * factor_y
-                # print("dist", dist, "access", i, i+j -order-1, "value", factor_y * bcs[dist][-j], "j", j)
+                A[i, (ix+1)*ny + j - len(coeffs_y_end)] += coeff
+                # print('\t access', i, (ix+1)*ny + j - len(coeffs_y_end), "value", coeff * factor_y)
         else:
             # print("condition center X")
             # print("coeffs_centered", coeffs_centered*factor_y)
             for j, coeff in enumerate(coeffs_centered):
+                # print('\t access', i, ix*ny+iy +j -n_side, "value", coeff * factor_y)
                 A[i, ix*ny+iy +j -n_side] += coeff * factor_y
         if ix < n_side:
             # print("condition start Y")
-            coeffs_x_start = bcs[ix]
+            coeffs_x_start = CoefDF(2, ix, np.arange(0, order + 2)) * factor_x
             for j, coeff in enumerate(coeffs_x_start):
                 # print("access", i, (ix+j)*ny+iy, (ix+j), "value", coeff * factor_x)
-                A[i, j*ny + iy] += coeff * factor_x
+                A[i, j*ny + iy] += coeff
         elif ix >= nx - n_side:
             # print(nx*ny-n_side*ny)
-            dist = ix - nx + n_side
-            # print(i, ix, iy, nx, ny, dist)
-            coeffs_x_end = bcs[::-1][dist][::-1]
+            coeffs_x_end = CoefDF(2, order+2+ix-nx, np.arange(0, order + 2)) * factor_x
+            # print(order+2+ix-nx, np.arange(0, order + 2))
             # print("condition end Y")
             for j, coeff in enumerate(coeffs_x_end):
                 # print("access", i, i-order-1+j*ny,(ix+j-(len(coeffs_x_end)-1))*ny)
-                A[i, (j-len(coeffs_x_end))*ny + iy] += coeff * factor_x
+                A[i, (j-len(coeffs_x_end))*ny + iy] += coeff
         else:
             # print("condition center Y")
             for j, coeff in enumerate(coeffs_centered):
-                # print("i, j", ix, j, "n_side", n_side, 'access', i, i+(j-n_side)*ny, (ix + j - n_side)*ny + iy)
+                # print("\t access", i, (ix + j - n_side)*ny + iy, "value", coeff * factor_x)
                 A[i, (ix + j - n_side)*ny + iy] += coeff * factor_x
 
     # spy(A) visualisation de la matrice
@@ -122,7 +124,7 @@ def radiator_def(nx, ny, num=1):
         )
     else:  # bottom middle radiator in front of window
         radiator = np.where(
-            (0.45 <= X) & (X <= 0.55) & (0 <= Y) & (Y <= 0.1), True, False
+            (0.40 <= X) & (X <= 0.60) & (0 <= Y) & (Y <= 0.2), True, False
         )
     return radiator
 
@@ -189,33 +191,32 @@ def heat_equation_2d(
             lu = splu(A)
 
         # Radiator heating
-        phi[radiator] = (T_rad - U_prev[radiator]) ** 2 * (T_rad - U[radiator])
+        # phi[radiator] = (T_rad - U_prev[radiator]) ** 2 * (T_rad - U[radiator])
+        phi[radiator] = (T_rad - U[radiator])**3
 
         Uflat= U.flatten()
-        phiflat= phi.flatten()
+        phiflat = phi.flatten()
 
-        U = lu.solve(Uflat
+        U= lu.solve(Uflat
                     + D * phiflat
                 ).reshape(
             (nx, ny)
         )
 
-        U[0, 1:-1] = U[1 : space_order + 1, 1:-1].T @ BC_coefs  # bottom
-        U[-1, 1:-1] = U[-space_order - 1 : -1, 1:-1].T @ BC_coefs[::-1]  # top
-        U[1:-1, 0] = U[1:-1, 1 : space_order + 1] @ BC_coefs[::-1]
-        U[1:-1, -1] = U[1:-1, -space_order - 1 : -1] @ BC_coefs  #
+        # U[0, 1:-1] = U[1 : space_order + 1, 1:-1].T @ BC_coefs  # bottom
+        # U[-1, 1:-1] = U[-space_order - 1 : -1, 1:-1].T @ BC_coefs[::-1]  # top
+        # U[1:-1, 0] = U[1:-1, 1 : space_order + 1] @ BC_coefs[::-1]
+        # U[1:-1, -1] = U[1:-1, -space_order - 1 : -1] @ BC_coefs  #
 
-        # U[0,1:-1] = U[1,1:-1]
-        # U[-1,1:-1] = U[-2,1:-1]
-        # U[1:-1,0] = U[1:-1,1]
-        # U[1:-1,-1] = U[1:-1,-2]
+        U[0,1:-1] = U[1,1:-1]
+        U[-1,1:-1] = U[-2,1:-1]
+        U[1:-1,0] = U[1:-1,1]
+        U[1:-1,-1] = U[1:-1,-2]
 
-        corner_coefs = CoefDF(1, 0, np.linspace(0, 1, space_order + 1))
-        corner_coefs = -corner_coefs[1:] / corner_coefs[0]
-        U[0,0] = .5 * (U[1:space_order+1,0] @ corner_coefs + U[0,1:space_order+1] @ corner_coefs)
-        U[0,-1] = .5 * (U[1:space_order+1,-1] @ corner_coefs + U[0,-2:-space_order-2:-1] @ corner_coefs)
-        U[-1,0] = .5 * (U[-space_order-1:-1,0] @ corner_coefs[::-1] + U[-1,1:space_order+1] @ corner_coefs)
-        U[-1,-1] = .5 * (U[-space_order-1:-1,-1] @ corner_coefs[::-1] + U[-1,-2:-space_order-2:-1] @ corner_coefs)
+        U[0,0] = U[1,0]
+        U[0,-1] = U[1,-1]
+        U[-1,0] = U[-2,0]
+        U[-1,-1] = U[-2,-1]
 
         
         U[window] = T_ext
@@ -241,13 +242,13 @@ if __name__ == "__main__":
 
     nx = 40
     ny = 40
-    T = 40000.0
-    CFL = 0.9
+    T = 400000.0
+    CFL = 1
     D = 2.2e-5 # D is the thermal diffusivity in m^2/s
     T_ext = 5.0
     T_int = 20.0
     T_rad = 50.0
-    time_points = 50
+    time_points = 300
     solution, history = heat_equation_2d(
         nx=nx,
         ny=ny,
@@ -257,6 +258,7 @@ if __name__ == "__main__":
         T_ext=T_ext,
         T_int=T_int,
         T_rad=T_rad,
+        space_order = 4,
         time_points=time_points,
     )
     # print("len: ", len(history))

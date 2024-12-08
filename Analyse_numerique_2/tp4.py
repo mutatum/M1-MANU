@@ -102,7 +102,6 @@ def solution_td(x, t=2):
 
 def newton(a, da, u0, du0, t, x, tol=1e-6, max_iter=100):
     X = x
-
     for _ in range(max_iter):
         g = a(u0(X)) * t + X - x
         gp = da(u0(X)) * du0(X) * t + 1
@@ -122,15 +121,14 @@ def build_solution(a, da, u0, du0):
         if X is None:
             return None
         return u0(X)
-
     return u
 
 
 u0_tp = lambda x: np.sin(np.pi * 2 * x)
 
-npoints = 800
-interval = [0, 1]
-T = 0.16
+npoints = 30
+interval = [-1, 1]
+T = 0.18
 CFL = 0.8
 
 x_centers, sol_LF = finite_volume_method(
@@ -144,7 +142,7 @@ _, sol_MR = finite_volume_method(
 )
 print(x_centers.shape, sol_LF.shape, sol_MR.shape)
 
-x_space = np.linspace(interval[0], interval[1], npoints)
+x_space = np.linspace(interval[0], interval[1], 100)
 # sol_exact = solution_exacte_cours(x_exact, T)
 sol_exact = [
     build_solution(
