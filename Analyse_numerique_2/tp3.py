@@ -182,7 +182,6 @@ def heat_equation_2d(
     # Boundary conditions
     BC_coefs = CoefDF(1, 0, np.linspace(0, 1, space_order + 1))
     BC_coefs = -BC_coefs[1:] / BC_coefs[0]
-    U_prev = U.copy()
     while t < T:
         # Adjust dt for final step
         if T - t < dt:
@@ -203,10 +202,10 @@ def heat_equation_2d(
             (nx, ny)
         )
 
-        # U[0, 1:-1] = U[1 : space_order + 1, 1:-1].T @ BC_coefs  # bottom
-        # U[-1, 1:-1] = U[-space_order - 1 : -1, 1:-1].T @ BC_coefs[::-1]  # top
-        # U[1:-1, 0] = U[1:-1, 1 : space_order + 1] @ BC_coefs[::-1]
-        # U[1:-1, -1] = U[1:-1, -space_order - 1 : -1] @ BC_coefs  #
+        U[0, 1:-1] = U[1 : space_order + 1, 1:-1].T @ BC_coefs  # bottom
+        U[-1, 1:-1] = U[-space_order - 1 : -1, 1:-1].T @ BC_coefs[::-1]  # top
+        U[1:-1, 0] = U[1:-1, 1 : space_order + 1] @ BC_coefs[::-1]
+        U[1:-1, -1] = U[1:-1, -space_order - 1 : -1] @ BC_coefs  #
 
         U[0,1:-1] = U[1,1:-1]
         U[-1,1:-1] = U[-2,1:-1]
@@ -242,13 +241,13 @@ if __name__ == "__main__":
 
     nx = 40
     ny = 40
-    T = 400000.0
-    CFL = 1
+    T = 40000.0
+    CFL = 8
     D = 2.2e-5 # D is the thermal diffusivity in m^2/s
     T_ext = 5.0
     T_int = 20.0
     T_rad = 50.0
-    time_points = 300
+    time_points = 600
     solution, history = heat_equation_2d(
         nx=nx,
         ny=ny,
