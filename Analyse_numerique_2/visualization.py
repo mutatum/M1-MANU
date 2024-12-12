@@ -26,7 +26,7 @@ class HistoryManager:
         return (t - self.last_save_time) >= self.save_frequency
 
     def add(self, t, U, force=False):
-        if not self.should_save(t) or not force:
+        if not self.should_save(t) and not force:
             return
         
         self.history.append((t, U.copy()))
@@ -51,7 +51,7 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, lengt
 
 def _format_time(t: float) -> str:
     """
-    Formats time `t` into the two most pertinent units (e.g., years, months).
+    Formats time t into the two most pertinent units (e.g., years, months).
     
     Args:
         t: Time value in seconds.
@@ -107,19 +107,30 @@ def visualize_pde_evolution(history_manager, x_range: np.ndarray, y_range: Optio
     history = history_manager.get_history()
     is_2d = y_range is not None
 
-    initial_data = history[0][1]
-
-    if dynamic_scaling:
-        z_min, z_max = np.min(initial_data), np.max(initial_data)
-    else:
+    # Compute global z_min and z_max for fixed scaling
+    if not dynamic_scaling:
         z_min, z_max = np.inf, -np.inf
         for _, data in history:
             z_min = min(z_min, np.min(data))
             z_max = max(z_max, np.max(data))
+    else:
+        # Use the initial data for the first frame's z_min and z_max
+        initial_data = history[0][1]
+        z_min, z_max = np.min(initial_data), np.max(initial_data)
+
+    # Set up the initial frame
+    initial_data = history[0][1]
 
     if mode == 'heightmap' and is_2d:
         fig = go.Figure(
-            data=[go.Surface(z=initial_data, x=x_range, y=y_range, colorscale=colorscale, cmin=z_min, cmax=z_max)]
+            data=[go.Surface(
+                z=initial_data,
+                x=x_range,
+                y=y_range,
+                colorscale=colorscale,
+                cmin=z_min,
+                cmax=z_max
+            )]
         )
     elif is_2d:
         fig = go.Figure(
@@ -135,7 +146,10 @@ def visualize_pde_evolution(history_manager, x_range: np.ndarray, y_range: Optio
         scene=dict(
             xaxis_title="X",
             yaxis_title="Y" if is_2d else "Value",
-            zaxis_title="Value" if mode == 'heightmap' else None
+            zaxis_title="Value" if mode == 'heightmap' else None,
+            zaxis=dict(range=[z_min, z_max]) if is_2d and mode == 'heightmap' else None,
+            aspectmode="cube",                 # Locks the aspect ratio to be equal in all dimensions
+            aspectratio=dict(x=1, y=1, z=0.5),
         )
     )
 
@@ -143,16 +157,27 @@ def visualize_pde_evolution(history_manager, x_range: np.ndarray, y_range: Optio
     for t, data in history:
         formatted_time = _format_time(t)
         if dynamic_scaling:
-            z_min, z_max = np.min(data), np.max(data)
+            # Update z_min and z_max per frame
+            z_min_frame, z_max_frame = np.min(data), np.max(data)
+        else:
+            # Use fixed z_min and z_max
+            z_min_frame, z_max_frame = z_min, z_max
 
         if mode == 'heightmap' and is_2d:
             frames.append(go.Frame(
-                data=[go.Surface(z=data, x=x_range, y=y_range, colorscale=colorscale, cmin=z_min, cmax=z_max)],
+                data=[go.Surface(
+                    z=data,
+                    x=x_range,
+                    y=y_range,
+                    colorscale=colorscale,
+                    cmin=z_min_frame,
+                    cmax=z_max_frame
+                )],
                 name=f"t={formatted_time}"
             ))
         elif is_2d:
             frames.append(go.Frame(
-                data=[go.Heatmap(x=x_range, y=y_range, z=data, colorscale=colorscale, zmin=z_min, zmax=z_max)],
+                data=[go.Heatmap(x=x_range, y=y_range, z=data, colorscale=colorscale, zmin=z_min_frame, zmax=z_max_frame)],
                 name=f"t={formatted_time}"
             ))
         else:
