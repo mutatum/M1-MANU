@@ -2,6 +2,7 @@
 import numpy as np
 import visualization as vis
 from scipy.sparse import csc_array, kron, eye, diags
+from scipy.sparse.linalg import gmres
 
 
 def add_neumann_bc(L1D, dx):
@@ -33,14 +34,14 @@ def build_2d_laplacian_4th_order_with_neumann_bc(Nx, Ny):
     return L
 
 
-def build_step_matrix(Nx, Ny, dt, D):
+def build_step_matrix(Nx, Ny, dt, D, implicit=False):
+    global window
 
     L = build_2d_laplacian_4th_order_with_neumann_bc(Nx, Ny)
-    A = eye(Nx * Ny) + dt * D * L
-
-    # window def
-    X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
-    window = np.where((0.4 <= X) & (X <= 0.6) & (0.0 == Y), True, False)
+    if implicit:
+        A = eye(Nx * Ny) - D * dt * L
+    else:
+        A = eye(Nx * Ny) + D * dt * L
 
     # Carve out window
     A = A.tolil()
@@ -49,35 +50,35 @@ def build_step_matrix(Nx, Ny, dt, D):
         ix, iy = divmod(i, Ny)
         if window[ix, iy]:
             A[i, :] = 0
+            if implicit: A[i, i] = 1
             b[i] = 5.0
 
     return csc_array(A), b
 
-def heat(u0, Nx, Ny, T, D, rad_T):
+def explicit_heat(u0, Nx, Ny, T, D, rad_T):
+    global window, radiator
 
     dx = 1 / (Nx - 1)
     dy = 1 / (Ny - 1)
     dt = CFL * (dx**2 * dy**2) / (2 * D * (dx**2 + dy**2))
     dt = min(dt, T / 10)
 
-    X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
     U = u0(X, Y)
-
-    radiator = np.where((0.4 <= X) & (X <= 0.6) & (0.0 <= Y) & (Y <= 0.1), True, False)
-
     phi = np.zeros_like(U)
+
     history_manager = vis.HistoryManager(save_frequency=T/30)
     history_manager.add(0, U, force=True)
 
     t = 0.0
     A, b = build_step_matrix(Nx, Ny, dt, D)
-    percent = 0.1
     while t < T:
+        if int(t / T * 100) % 5 == 0: print(f"Progress: {t/T*100-1:.1f}% Complete", end="\r")
 
         phi[radiator] = (rad_T - U[radiator])**3
 
         if t + dt > T:
             dt = T - t
+            A, b = build_step_matrix(Nx, Ny, dt, D)
         U = (A @ U.flatten() + b + D*phi.flatten()).reshape((Nx, Ny))
         t += dt
         
@@ -86,15 +87,59 @@ def heat(u0, Nx, Ny, T, D, rad_T):
     history_manager.add(T, U, force=True)
     return U, history_manager
 
+def implicit_heat(u0, Nx, Ny, T, D, rad_T):
+    global window, radiator
+
+    dx = 1 / (Nx - 1)
+    dy = 1 / (Ny - 1)
+    dt = CFL * (dx**2 * dy**2) / (2 * D * (dx**2 + dy**2))
+    dt = min(dt, T / 10)
+
+    U = u0(X, Y)
+    phi = np.zeros_like(U)
+
+    history_manager = vis.HistoryManager(save_frequency=T/30)
+    history_manager.add(0, U, force=True)
+
+    t = 0.0
+    A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+    while t < T:
+        if int(t / T * 100) % 5 == 0: print(f"Progress: {int((t*100)//T)}% Complete", end="\r")
+
+        if t + dt > T:
+            dt = T - t
+            A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+
+        U[window] = 0
+        phi[radiator] = (rad_T - U[radiator])**3
+        rhs = U.flatten() + b + dt* D * phi.flatten()
+
+        Unext, exit_code = gmres(A, rhs, rtol=1e-6)
+
+        if exit_code != 0:
+            print(f"GMRES failed to converge at t = {t:.2f}")
+            break
+
+        U = Unext.reshape((Nx, Ny))
+
+        t += dt
+        history_manager.add(t, U)
+
+    history_manager.add(T, U, force=True)
+    return U, history_manager
+
 # %%
 D = 2.2e-5
 Nx, Ny = 60, 60
-T = 20000
-CFL = 0.55
+T = 200000.0
+CFL = 30.0
 u0 = lambda x, y: np.ones_like(x) * 20.0
+X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
+window = np.where((0.4 <= X) & (X <= 0.6) & (0.0 == Y), True, False)
+radiator = np.where((0.4 <= X) & (X <= 0.6) & (0.9 <= Y) & (Y <= 1.1), True, False)
 
 
-U, history_manager = heat(u0, Nx, Ny, T, D, 50.0)
+U, history_manager = implicit_heat(u0, Nx, Ny, T, D, 50.0)
 fig = vis.visualize_heat_equation(history_manager, np.linspace(0,1,Nx), np.linspace(0,1,Ny) , mode='heightmap', dynamic_scaling=False)
 print("Statistics:")
 print(f"Mean: {U.mean()}, Var: {U.std()}", U.min(), U.max())

@@ -25,7 +25,7 @@ class HistoryManager:
             return True
         return (t - self.last_save_time) >= self.save_frequency
 
-    def add(self, t, U, force=True):
+    def add(self, t, U, force=False):
         if not self.should_save(t) or not force:
             return
         
@@ -48,9 +48,6 @@ def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, lengt
         sleep(0.1)
         print()
 
-import numpy as np
-from typing import Union, Callable, Optional, List
-import plotly.graph_objects as go
 
 def _format_time(t: float) -> str:
     """
@@ -108,7 +105,6 @@ def visualize_pde_evolution(history_manager, x_range: np.ndarray, y_range: Optio
         A Plotly Figure object.
     """
     history = history_manager.get_history()
-    t_range = np.array([t for t, _ in history])
     is_2d = y_range is not None
 
     initial_data = history[0][1]
