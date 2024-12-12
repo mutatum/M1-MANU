@@ -2,7 +2,7 @@
 import numpy as np
 import visualization as vis
 from scipy.sparse import csc_array, kron, eye, diags
-from scipy.sparse.linalg import gmres
+from scipy.sparse.linalg import gmres, spilu, LinearOperator
 
 
 def add_neumann_bc(L1D, dx):
@@ -79,7 +79,7 @@ def explicit_heat(u0, Nx, Ny, T, D, rad_T):
         if t + dt > T:
             dt = T - t
             A, b = build_step_matrix(Nx, Ny, dt, D)
-        U = (A @ U.flatten() + b + D*phi.flatten()).reshape((Nx, Ny))
+        U = (A @ U.flatten() + b + dt*D*phi.flatten()).reshape((Nx, Ny))
         t += dt
         
         history_manager.add(t, U)
@@ -99,22 +99,26 @@ def implicit_heat(u0, Nx, Ny, T, D, rad_T):
     phi = np.zeros_like(U)
 
     history_manager = vis.HistoryManager(save_frequency=T/30)
-    history_manager.add(0, U, force=True)
+    # history_manager.add(0, U, force=True)
 
     t = 0.0
     A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+    ilu = spilu(A)
+    M = LinearOperator(A.shape, ilu.solve)
     while t < T:
         if int(t / T * 100) % 5 == 0: print(f"Progress: {int((t*100)//T)}% Complete", end="\r")
 
         if t + dt > T:
             dt = T - t
             A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+            ilu = spilu(A)
+            M = LinearOperator(A.shape, ilu.solve)
 
         U[window] = 0
         phi[radiator] = (rad_T - U[radiator])**3
         rhs = U.flatten() + b + dt* D * phi.flatten()
 
-        Unext, exit_code = gmres(A, rhs, rtol=1e-6)
+        Unext, exit_code = gmres(A, rhs, M=M, rtol=1e-6)
 
         if exit_code != 0:
             print(f"GMRES failed to converge at t = {t:.2f}")
@@ -131,8 +135,8 @@ def implicit_heat(u0, Nx, Ny, T, D, rad_T):
 # %%
 D = 2.2e-5
 Nx, Ny = 60, 60
-T = 200000.0
-CFL = 30.0
+T = 2000.0
+CFL = 1.0
 u0 = lambda x, y: np.ones_like(x) * 20.0
 X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
 window = np.where((0.4 <= X) & (X <= 0.6) & (0.0 == Y), True, False)
