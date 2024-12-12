@@ -34,6 +34,28 @@ def Rusanov(ul, ur, df) -> np.ndarray:
     return np.maximum(np.abs(df(ul)), np.abs(df(ur)))
 
 
+# Define flux scheme functions with a consistent interface
+def compute_gamma_murman_roe(u_L, u_R, f, df, dx, dt):
+    return np.abs(MurmanRoe(u_L, u_R, f, df))
+
+def compute_gamma_rusanov(u_L, u_R, f, df, dx, dt):
+    return Rusanov(u_L, u_R, df)
+
+def compute_gamma_lax_wendroff(u_L, u_R, f, df, dx, dt):
+    return LaxWendroff(u_L, u_R, f, df, dx, dt)
+
+def compute_gamma_lax_friedrichs_global(u_L, u_R, f, df, dx, dt):
+    gamma_value = LaxFriedrichs_global(u_L, u_R, df)
+    return np.full_like(u_L, gamma_value)
+
+# Map flux scheme names to functions
+flux_schemes = {
+    "Murman-Roe": compute_gamma_murman_roe,
+    "Rusanov": compute_gamma_rusanov,
+    "Lax-Wendroff": compute_gamma_lax_wendroff,
+    "Lax-Friedrichs_global": compute_gamma_lax_friedrichs_global,
+}
+
 def finite_volume_method(
     f: Callable,
     df: Callable,
@@ -61,7 +83,6 @@ def finite_volume_method(
         g = np.max(np.abs(df(u)))
         if g < 1e-8:
             dt = CFL * dx / 2.34
-            "here"
         else:
             dt = CFL * dx / g
 
@@ -75,19 +96,11 @@ def finite_volume_method(
         u_L = u_extended[:-1]
         u_R = u_extended[1:]
 
-        # array gammas
-        if flux_scheme == "Murman-Roe":
-            gamma = np.abs(MurmanRoe(u_L, u_R, f, df))  # array
-        elif flux_scheme == "Rusanov" or flux_scheme == "Lax-Friedrichs_local":
-            gamma = Rusanov(u_L, u_R, df)
-        elif flux_scheme == "Lax-Wendroff":
-            gamma = LaxWendroff(u_L, u_L, f, df, dx, dt)  # single value
-        else: # scalar gammas
-            if flux_scheme == "Lax-Friedrichs_global":
-                gamma_value = LaxFriedrichs_global(u_L, u_R, df)  # single value
-            else:
-                raise ValueError(f"Invalid scheme: {flux_scheme}")
-            gamma = np.full_like(u_L, gamma_value)
+        # Compute gamma using the selected flux scheme
+        if flux_scheme in flux_schemes:
+            gamma = flux_schemes[flux_scheme](u_L, u_R, f, df, dx, dt)
+        else:
+            raise ValueError(f"Invalid scheme: {flux_scheme}")
 
         F_i = F(u_L, u_R, gamma)
 
@@ -142,61 +155,37 @@ def plot_comparison(
     periodic: bool = True,
     solution: Callable | tuple = None,
     flux: str = None,
+    flux_schemes_to_plot: list = None,
 ):
+    if flux_schemes_to_plot is None:
+        flux_schemes_to_plot = [
+            "Lax-Friedrichs_global",
+            "Lax-Wendroff",
+            "Murman-Roe",
+            "Rusanov",
+        ]
+    solutions = {}
+    for scheme in flux_schemes_to_plot:
+        x_centers, sol = finite_volume_method(
+            f=f,
+            df=df,
+            u0=u0,
+            T=T,
+            interval=interval,
+            m=npoints,
+            flux_scheme=scheme,
+            CFL=CFL,
+            periodic=periodic,
+            solution=solution,
+        )
+        solutions[scheme] = sol
 
-    x_centers, sol_MR = finite_volume_method(
-        f=f,
-        df=df,
-        u0=u0,
-        T=T,
-        interval=interval,
-        m=npoints,
-        flux_scheme="Murman-Roe",
-        CFL=CFL,
-        periodic=periodic,
-        solution=solution,
-    )
-    _, sol_LW = finite_volume_method(
-        f=f,
-        df=df,
-        u0=u0,
-        T=T,
-        interval=interval,
-        m=npoints,
-        flux_scheme="Lax-Wendroff",
-        CFL=CFL,
-        periodic=periodic,
-        solution=solution,
-    )
-    _, sol_R = finite_volume_method(
-        f=f,
-        df=df,
-        u0=u0,
-        T=T,
-        interval=interval,
-        m=npoints,
-        flux_scheme="Rusanov",
-        CFL=CFL,
-        periodic=periodic,
-        solution=solution,
-    )
-    _, sol_LF = finite_volume_method(
-        f,
-        df,
-        u0,
-        T=T,
-        interval=interval,
-        m=npoints,
-        flux_scheme="Lax-Friedrichs_global",
-        CFL=CFL,
-        periodic=periodic,
-        solution=solution,
-    )
     x_solution = np.linspace(interval[0], interval[1], 200)
-    plt.figure(figsize=(15, 10))
-    if du0 != None and ddf != None:
+    plt.figure(figsize=(25, 15))
+
+    if du0 is not None and ddf is not None:
         u_solution = [build_solution(df, ddf, u0, du0)(T, x) for x in x_solution]
-    elif solution != None:
+    elif solution is not None:
         if isinstance(solution, tuple):
             x_solution, u_solution = solution
         elif callable(solution):
@@ -205,13 +194,13 @@ def plot_comparison(
             raise ValueError("Invalid solution")
         plt.plot(x_solution, u_solution, label="Exact Solution", linestyle="--")
 
-    if flux == None:
+    if flux is None:
         flux = f.__name__
 
-    plt.plot(x_centers, sol_LF, "-o", label="Global Lax-Friedrichs")
-    plt.plot(x_centers, sol_LW, "-o", label="Lax-Wendroff")
-    plt.plot(x_centers, sol_MR, "-o", label="Murman-Roe")
-    plt.plot(x_centers, sol_R, "-o", label="Local Lax-Friedrichs / Rusanov")
+    for scheme in flux_schemes_to_plot:
+        label = scheme.replace("_", " ").title()
+        plt.plot(x_centers, solutions[scheme], "-o", label=label)
+
     plt.xlabel("x")
     plt.ylabel("u")
     plt.title(f"FV {flux} with CFL={CFL} and T={T} for {npoints} points")
@@ -392,16 +381,28 @@ plot_comparison(
 )
 # %%
 
-c = 1.5
+c = 1
+a,b = 0, 1
+L = (b - a)*c
+u0 = lambda x: np.where((x % L + a < 0.625) & (x % L + a >= 0.375), 1.0, 0.0)
+T = 500
+CFL = 0.45
+points = 60
+# u0 = lambda x: np.where(x < 0.5, np.where(x>0, 1.0, 0.0), 0.0)
+x_solution = np.linspace(a, b, 200)
+u_solution = u0(x_solution- (T%c)*c)
 plot_comparison(
     f=lambda u: u*c,
     df=lambda u: np.ones_like(u)*c,
-    u0=lambda x: np.where(x < 0.5, np.where(x>0, 1.0, 0.0), 0.0),
-    T=103,
-    interval=[-.5, 1],
-    npoints=60,
-    CFL=0.9,
+    u0=u0,
+    T=T,
+    interval=[a, b],
+    npoints=points,
+    CFL=CFL,
+    solution = (x_solution, u_solution),
     flux="Advection",
     periodic=True,
 )
 
+
+# %%
