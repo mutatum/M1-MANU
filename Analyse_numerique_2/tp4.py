@@ -275,7 +275,7 @@ plot_comparison(
     u0_tp,
     T=0.3,
     interval=[0, 1],
-    npoints=100,
+    npoints=20,
     ddf=lambda _: 1,
     du0=du0_tp,
     CFL=0.5,
@@ -306,10 +306,10 @@ plot_comparison(
     burgers,
     dburgers,
     u0_tp,
-    T=0.65,
+    T=.25,
     interval=[x_solution[0], x_solution[-1]],
     # interval=[-1, 1],
-    npoints=200,
+    npoints=20,
     solution=(x_solution, u_solution),
     flux="Buckley",
 )
@@ -385,9 +385,9 @@ c = 1
 a,b = 0, 1
 L = (b - a)*c
 u0 = lambda x: np.where((x % L + a < 0.625) & (x % L + a >= 0.375), 1.0, 0.0)
-T = 500
+T = 50
 CFL = 0.45
-points = 60
+points = 200
 # u0 = lambda x: np.where(x < 0.5, np.where(x>0, 1.0, 0.0), 0.0)
 x_solution = np.linspace(a, b, 200)
 u_solution = u0(x_solution- (T%c)*c)
