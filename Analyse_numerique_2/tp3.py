@@ -41,19 +41,18 @@ def build_step_matrix(Nx, Ny, dt, D, implicit=False):
     if implicit:
         A = eye(Nx * Ny) - D * dt * L
     else:
+        print("Explicit")
         A = eye(Nx * Ny) + D * dt * L
 
     # Carve out window
     A = A.tolil()
-    b = np.zeros(Nx * Ny)
     for i in range(Nx * Ny):
         ix, iy = divmod(i, Ny)
         if window[ix, iy]:
             A[i, :] = 0
-            if implicit: A[i, i] = 1
-            b[i] = 5.0
+            A[i, i] = 1
 
-    return csc_array(A), b
+    return csc_array(A)
 
 def explicit_heat(u0, Nx, Ny, T, D, rad_T):
     global window, radiator
@@ -64,13 +63,13 @@ def explicit_heat(u0, Nx, Ny, T, D, rad_T):
     dt = min(dt, T / 10)
 
     U = u0(X, Y)
+    U[window] = 5.0
     phi = np.zeros_like(U)
 
     history_manager = vis.HistoryManager(save_frequency=T/30)
-    history_manager.add(0, U, force=True)
 
     t = 0.0
-    A, b = build_step_matrix(Nx, Ny, dt, D)
+    A = build_step_matrix(Nx, Ny, dt, D)
     while t < T:
         if int(t / T * 100) % 5 == 0: print(f"Progress: {t/T*100-1:.1f}% Complete", end="\r")
 
@@ -78,8 +77,8 @@ def explicit_heat(u0, Nx, Ny, T, D, rad_T):
 
         if t + dt > T:
             dt = T - t
-            A, b = build_step_matrix(Nx, Ny, dt, D)
-        U = (A @ U.flatten() + b + dt*D*phi.flatten()).reshape((Nx, Ny))
+            A = build_step_matrix(Nx, Ny, dt, D)
+        U = (A @ U.flatten() + dt * D * phi.flatten()).reshape((Nx, Ny))
         t += dt
         
         history_manager.add(t, U)
@@ -99,10 +98,9 @@ def implicit_heat(u0, Nx, Ny, T, D, rad_T):
     phi = np.zeros_like(U)
 
     history_manager = vis.HistoryManager(save_frequency=T/30)
-    # history_manager.add(0, U, force=True)
 
     t = 0.0
-    A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+    A = build_step_matrix(Nx, Ny, dt, D, implicit=True)
     ilu = spilu(A)
     M = LinearOperator(A.shape, ilu.solve)
     while t < T:
@@ -110,13 +108,13 @@ def implicit_heat(u0, Nx, Ny, T, D, rad_T):
 
         if t + dt > T:
             dt = T - t
-            A, b = build_step_matrix(Nx, Ny, dt, D, implicit=True)
+            A = build_step_matrix(Nx, Ny, dt, D, implicit=True)
             ilu = spilu(A)
             M = LinearOperator(A.shape, ilu.solve)
 
         U[window] = 0
         phi[radiator] = (rad_T - U[radiator])**3
-        rhs = U.flatten() + b + dt* D * phi.flatten()
+        rhs = U.flatten() + dt* D * phi.flatten()
 
         Unext, exit_code = gmres(A, rhs, M=M, rtol=1e-6)
 
@@ -135,8 +133,8 @@ def implicit_heat(u0, Nx, Ny, T, D, rad_T):
 # %%
 D = 2.2e-5
 Nx, Ny = 60, 60
-T = 2000.0
-CFL = 1.0
+T = 20000.0
+CFL = 30.0
 u0 = lambda x, y: np.ones_like(x) * 20.0
 X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
 window = np.where((0.4 <= X) & (X <= 0.6) & (0.0 == Y), True, False)
@@ -148,5 +146,21 @@ fig = vis.visualize_heat_equation(history_manager, np.linspace(0,1,Nx), np.linsp
 print("Statistics:")
 print(f"Mean: {U.mean()}, Var: {U.std()}", U.min(), U.max())
 
+
+# %%
+D = 2.2e-5
+Nx, Ny = 60, 60
+T = 2000.0
+CFL = 0.45
+u0 = lambda x, y: np.ones_like(x) * 20.0
+X, Y = np.meshgrid(np.linspace(0, 1, Ny), np.linspace(0, 1, Nx))
+window = np.where((0.4 <= X) & (X <= 0.6) & (0.0 == Y), True, False)
+radiator = np.where((0.4 <= X) & (X <= 0.6) & (0.9 <= Y) & (Y <= 1.1), True, False)
+
+
+U, history_manager = explicit_heat(u0, Nx, Ny, T, D, 50.0)
+fig = vis.visualize_heat_equation(history_manager, np.linspace(0,1,Nx), np.linspace(0,1,Ny) , mode='heightmap', dynamic_scaling=False)
+print("Statistics:")
+print(f"Mean: {U.mean()}, Var: {U.std()}", U.min(), U.max())
 
 # %%
