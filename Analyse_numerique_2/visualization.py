@@ -256,3 +256,22 @@ def visualize_heat_equation(history_manager, x_range: np.ndarray, y_range: Optio
     return visualize_pde_evolution(history_manager, x_range, y_range, 
                                    title="Heat Equation Evolution", 
                                    colorscale='RdBu_r', mode=mode, dynamic_scaling=dynamic_scaling)
+
+def visualize_wave_equation(history_manager, x_range: np.ndarray, y_range: Optional[np.ndarray] = None,
+                            mode: str = 'heatmap', dynamic_scaling: bool = True) -> go.Figure:
+    """
+    Specialized visualization for wave equation solutions (default: heatmap).
+    
+    Args:
+        history_manager: Instance of HistoryManager containing saved states.
+        x_range: Spatial coordinates for x.
+        y_range: Spatial coordinates for y (None for 1D problems).
+        mode: Visualization mode ('heatmap' or 'heightmap').
+        dynamic_scaling: Adjust color scale dynamically per frame.
+    
+    Returns:
+        A Plotly Figure object.
+    """
+    return visualize_pde_evolution(history_manager, x_range, y_range, 
+                                   title="Wave Equation Evolution", 
+                                   colorscale='RdBu_r', mode=mode, dynamic_scaling=dynamic_scaling)
