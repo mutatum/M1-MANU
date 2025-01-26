@@ -190,6 +190,9 @@ double trapezoidal(double a, double b, double (*f)(double), size_t N) {
 int main() {
 
   cout << "Exercice 1: " << endl;
+  cout << power(2, 3) << endl;
+
+  cout << "\nExercice 2: " << endl;
   cout << factorial(0) << endl;
   cout << factorial(1) << endl;
   cout << factorial(2) << endl;
@@ -204,12 +207,12 @@ int main() {
   test.print();
   cout << endl;
 
-  cout << "Exercice 2: " << endl;
+  cout << "\nExercice 3: " << endl;
   cout << "Pascal's triangle" << endl;
   print_pascal_triangle_fact(10);
   cout << endl;
   print_pascal_triangle_sum(10);
-  cout << "Exercice 3: " << endl;
+  cout << "\nExercice 4: ";
   cout << endl;
   cout << "Exp Taylor:" << endl;
   cout << endl << std::scientific << std::setprecision(14);
@@ -221,7 +224,7 @@ int main() {
   cout << endl;
   cout << expTaylor(30);
   cout << endl << endl;
-  cout << "Exercice 4: " << endl;
+  cout << "\nExercice 5: " << endl;
   cout << expPade(0);
   cout << endl;
   cout << expPade(1);
@@ -231,32 +234,31 @@ int main() {
   cout << expPade(30);
   cout << endl;
 
-  cout << "Comparing precision. Exp(14): " << std::exp(14) << endl;
+  cout << "\nComparing precision. Exp(14): " << std::exp(14) << endl;
   cout << " delta expTaylor10: " << std::abs(expTaylor(14)-std::exp(14)) << endl;
   cout << " delta expPade5 " << std::abs(expPade(14) - std::exp(14)) << endl;
 
-  cout << "Exercice 5: " << endl;
+  cout << "\nExercice 6: " << endl;
   double r{1.0};
   double theta{3.14 / 4};
   double pReal, pImaginary;
 
-  cout << "Exercice 6: " << endl;
   CalculateRealAndImaginary(r, theta, pReal, pImaginary);
   cout << std::fixed << pReal << " Im: " << pImaginary;
   cout << endl;
 
-  cout << "Exercice 7: " << endl;
+  cout << "\nExercice 7: " << endl;
   const auto [x1, x2] = quadraticRoot(1, 4, 3);
 
   cout << x1 << " " << x2 << endl;
 
-  cout << "Exercice 8: " << endl;
+  cout << "\nExercice 8: " << endl;
   double u[] = {1, 2, 3, 4, 5};
   double v[] = {2, 2, 2, 2, 2};
 
   cout << scalarProduct(u, v, 5) << endl;
 
-  cout << "Exercice 9: " << endl;
+  cout << "\nExercice 9: " << endl;
   double (*p_function)(double x);
 
   p_function = myFunction;
@@ -266,7 +268,7 @@ int main() {
 
   auto Id = [](double x) { return x; };
 
-  cout << "Exercice 10: " << endl;
+  cout << "\nExercice 10: " << endl;
   cout << "Rectangular" << endl;
   cout << rectangular(0, 1, Id, 10) << endl;
   cout << rectangular(0, 1, expPade, 10) << endl;
