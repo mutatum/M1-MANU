@@ -21,20 +21,16 @@ def MurmanRoe(ul, ur, f, df, epsilon=1e-6) -> np.ndarray:
 def LaxFriedrichs_global(ul, ur, df) -> float:
     return np.max(np.abs(df(np.union1d(ul, ur))))
 
-
 def LaxFriedrichs(dx, dt) -> float:
     return dx / dt
 
-
 def LaxWendroff(ul, ur, f, df, dx, dt) -> float:
     return np.abs((dt / dx) * df((ul + ur) / 2) * MurmanRoe(ul, ur, f, df))
-
 
 def Rusanov(ul, ur, df) -> np.ndarray:
     return np.maximum(np.abs(df(ul)), np.abs(df(ur)))
 
 
-# Define flux scheme functions with a consistent interface
 def compute_gamma_murman_roe(u_L, u_R, f, df, dx, dt):
     return np.abs(MurmanRoe(u_L, u_R, f, df))
 
@@ -44,14 +40,17 @@ def compute_gamma_rusanov(u_L, u_R, f, df, dx, dt):
 def compute_gamma_lax_wendroff(u_L, u_R, f, df, dx, dt):
     return LaxWendroff(u_L, u_R, f, df, dx, dt)
 
+def compute_lax_friedrichs(u_L, u_R, f, df, dx, dt):
+    return LaxFriedrichs(dx, dt)
+
 def compute_gamma_lax_friedrichs_global(u_L, u_R, f, df, dx, dt):
     gamma_value = LaxFriedrichs_global(u_L, u_R, df)
     return np.full_like(u_L, gamma_value)
 
-# Map flux scheme names to functions
 flux_schemes = {
     "Murman-Roe": compute_gamma_murman_roe,
     "Rusanov": compute_gamma_rusanov,
+    "Lax-Friedrichs": compute_lax_friedrichs,
     "Lax-Wendroff": compute_gamma_lax_wendroff,
     "Lax-Friedrichs_global": compute_gamma_lax_friedrichs_global,
 }
@@ -96,7 +95,6 @@ def finite_volume_method(
         u_L = u_extended[:-1]
         u_R = u_extended[1:]
 
-        # Compute gamma using the selected flux scheme
         if flux_scheme in flux_schemes:
             gamma = flux_schemes[flux_scheme](u_L, u_R, f, df, dx, dt)
         else:
@@ -160,6 +158,7 @@ def plot_comparison(
     if flux_schemes_to_plot is None:
         flux_schemes_to_plot = [
             "Lax-Friedrichs_global",
+            "Lax-Friedrichs",
             "Lax-Wendroff",
             "Murman-Roe",
             "Rusanov",

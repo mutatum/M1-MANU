@@ -22,8 +22,8 @@ def plot_comparison(
     if flux_schemes_to_plot is None:
         flux_schemes_to_plot = [
             "Lax-Friedrichs_global",
-            # "Lax-Wendroff",
-            # "Murman-Roe",
+            "Lax-Wendroff",
+            "Murman-Roe",
             # "Rusanov",
         ]
     solutions_order_1 = {}
@@ -107,7 +107,7 @@ def plot_comparison(
 
 
 
-def burgers(u):  # Burgers' equation
+def burgers(u):
     return 0.5 * u * u
 
 
@@ -155,7 +155,7 @@ def solution_td(t, x):
 
 
 def u0_buckley(x):
-    x = np.array(x)  # Ensure x is a NumPy array
+    x = np.array(x)
     return np.where((-0.5 < x) & (x < 0), 1.0, 0.0)
 
 
@@ -287,7 +287,8 @@ def finite_volume_method(
                 case "PC": 
                     uhalf = u - .5 * FV_step(u, f, df, dx, dt/2, flux_scheme, order)
                     u = u - FV_step(uhalf, f, df, dx, dt, flux_scheme, order)
-
+                case _:
+                    raise ValueError(f"Invalid scheme: {scheme}")
         if np.any(np.isnan(u)) or np.any(np.abs(u) > 1e6):
             raise RuntimeError("Solution diverged")
 
