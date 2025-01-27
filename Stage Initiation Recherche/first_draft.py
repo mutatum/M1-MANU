@@ -60,87 +60,95 @@ u0_tp  = lambda x: np.sin(np.pi * 2 * x)
 du0_tp = lambda x: 2 * np.pi * np.cos(2 * np.pi * x)
 
 
-def forward_euler_CIR(x, u0, flux_derivative, T, CFL):
-
+def forward_euler_CIR(x, u0, df, T, CFL):
     dx = x[1]-x[0]
     u = u0.copy()
-
     t = 0
     while t < T:
-        if np.max(np.abs(flux_derivative(u))) < 1e-8:
+        if np.max(np.abs(df(u))) < 1e-8:
             dt = CFL * dx / 2.34
         else:
-            dt = CFL * dx / np.max(np.abs(flux_derivative(u)))
+            dt = CFL * dx / np.max(np.abs(df(u)))
         if T - t < dt:
             dt = T - t
+        
+        uB = np.pad(u, 1, mode='edge')
 
-        u_padded = np.pad(u, 1, mode="wrap")
+        uL = uB[:-1]
+        uC = (uB[1:] + uB[:-1])/2
+        uR = uB[1:]
+        
+        w = df(uC)
+        h = uL * np.maximum(0, w) + uR * np.minimum(0, w)
 
-        wave_speeds = flux_derivative((u_padded[1:] + u_padded[:-1]) / 2)
-        numerical_flux = lambda wave_speed, u_left, u_right: (
-            np.maximum(0, wave_speed) * u_left + np.minimum(0, wave_speed) * u_right
-        )
-
-        flux_left = numerical_flux(wave_speeds[:-1], u_padded[:-2], u_padded[1:-1])
-        flux_right = numerical_flux(wave_speeds[1:], u_padded[1:-1], u_padded[2:])
-
-        u -= dt * (flux_right - flux_left) / dx
+        u -= dt * (h[1:] - h[:-1])/dx
 
         t += dt
     return u
 
 x = np.linspace(0,1,num=100)
 # u0 = np.where( (x>.3) & (x<.7), 1.0, 0.0)
-U = forward_euler_CIR(x, u0_tp(x), dburgers, .02, .2)
+U = forward_euler_CIR(x, u0_tp(x), dburgers, .09, .4)
 plt.plot(x, u0_tp(x))
 plt.plot(x,U)
 
 # %%
+# def forwar
 
-def forward_euler_Harten_Hyman(x, u0, flux_derivative, T, CFL):
-
+def forward_euler_Harten_Hyman(x, u0, f, df, T, CFL):
     dx = x[1]-x[0]
     u = u0.copy()
-
     t = 0
     while t < T:
-        if np.max(np.abs(flux_derivative(u))) < 1e-8:
+        if np.max(np.abs(df(u))) < 1e-8:
             dt = CFL * dx / 2.34
         else:
-            dt = CFL * dx / np.max(np.abs(flux_derivative(u)))
+            dt = CFL * dx / np.max(np.abs(df(u)))
         if T - t < dt:
             dt = T - t
+        
+        uB = np.pad(u, 1, mode='edge')
 
-        u_padded = np.pad(u, 1, mode="wrap")
+        uL = uB[:-1]
+        uC = (uB[1:] + uB[:-1])/2
+        uR = uB[1:]
+        
+        s = np.maximum(0, np.maximum(df(uR)-df(uC), df(uC)-df(uL)))
+        w = df(uC)
+        h = uL * np.maximum(0, np.maximum(s, w)) + uR * np.minimum(0, np.minimum(-s, w))
 
-        u_half = (u_padded[1:] + u_padded[:-1]) /2
-        wave_speeds = flux_derivative(u_half)
-        sigmas = np.maximum(0,np.maximum(flux_derivative(u_padded[1:])-flux_derivative(u_half),flux_derivative(u_half)-flux_derivative(u_padded[:-1])))
-        numerical_flux = lambda wave_speed, sigma, u_left, u_right: (
-            np.maximum(0, np.maximum(sigma, wave_speed)) * u_left + np.minimum(0, np.minimum(sigma,wave_speed)) * u_right
-        )
-
-        flux_left = numerical_flux(sigmas[:-1], wave_speeds[:-1], u_padded[:-2], u_padded[1:-1])
-        flux_right = numerical_flux(sigmas[1:], wave_speeds[1:], u_padded[1:-1], u_padded[2:])
-
-        u -= dt * (flux_right - flux_left) / dx
+        u -= dt * (h[1:] - h[:-1])/dx
 
         t += dt
     return u
 
-x = np.linspace(-1,1,num=100)
-t=20
+x = np.linspace(-1,1,num=20)
+t=1
 
 u0 = lambda x: np.where(x<0, 1.0, 0.)
+flux = burgers
 dflux = dburgers
 
 plt.plot(x, u0(x), label="u0")
-U = forward_euler_Harten_Hyman(x, u0(x), dflux, t, .2)
+U = forward_euler_Harten_Hyman(x, u0(x), flux, dflux, t, .4)
 plt.plot(x,U, label="Harten&Hyman")
-U = forward_euler_CIR(x, u0(x), dflux, t, .2)
+U = forward_euler_CIR(x, u0(x), dflux, t, .4)
 plt.plot(x,U, label="CIR")
 
-# plt.plot(x,solution_td(t, x), '--', label="solution")
+sol = lambda x,t: np.where(x/t > 1, 0., 1.)
+plt.plot(x, sol(x,t), '--', label="solution")
 plt.legend()
 
+# %%
+
+x = np.linspace(-1,2,num=100)
+t = .2
+# u0 = np.where( (x>.3) & (x<.7), 1.0, 0.0)
+U = forward_euler_CIR(x, u0_cours(x), dburgers, t, .4)
+# plt.plot(x, u0_cours(x))
+plt.plot(x,U, label='CIR')
+U = forward_euler_Harten_Hyman(x, u0_cours(x), burgers, dburgers, t, .4)
+plt.plot(x, U, label='HH')
+plt.plot(x,solution_td(t, x),label='solution')
+plt.legend()
 # %%
