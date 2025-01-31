@@ -220,7 +220,7 @@ int main() {
   cout << endl;
   cout << expTaylor(1);
   cout << endl;
-  cout << expTaylor(10);
+  cout << expTaylor(5);
   cout << endl;
   cout << expTaylor(30);
   cout << endl << endl;
