@@ -8,7 +8,7 @@ def euler_flux(U, n: np.array, gamma=1.4):
     assert (
         U.shape[0] == 5
     ), f"Input P must have shape (5) or (5, N) but has shape: {U.shape}"
-    rho, u, v, w, p, E = conserved_to_primitive(U, gamma)
+    rho, u, v, w, p, E, e = conserved_to_primitive(U, gamma)
     q = u * n[0] + v * n[1] + w * n[2]
 
     return np.vstack(
@@ -22,20 +22,42 @@ def euler_flux(U, n: np.array, gamma=1.4):
     )
 
 
+def primitive_to_conserved(U, gamma=1.4):
+    rho, u, v, w, p = U
+    e = p / (gamma - 1)
+    E = e + .5 * rho * (u**2+v**2+w**2)
+    return np.vstack((rho, rho*u, rho*v, rho*w, E))
+
 def conserved_to_primitive(U, gamma=1.4):
+    """
+        Takes U = ( density rho,
+                    rho * velocity u, 
+                    rho * vel v, 
+                    rho *vel w, 
+                    Energy)
+        and gives U_cons= ( density rho,
+                            velocity u,
+                            velocity v,
+                            velocity w,
+                            pressure p,
+                            total energy per unit volume E,
+                            internal energy e,
+        )
+    """
     assert (
         U.shape[0] == 5
     ), f"Input P must have shape (5) or (5, N) but has shape: {U.shape}"
     rho, _u, _v, _w, E = U
     u, v, w = _u / rho, _v / rho, _w / rho
-    p = (gamma - 1.0) * (E - 0.5 * (u**2 + v**2 + w**2) * rho)
+    e = E - .5 * (u**2 + v**2 + w**2) * rho
+    p = (gamma - 1.0) * e
 
-    return np.vstack((rho, u, v, w, p, E))
+    return np.vstack((rho, u, v, w, p, E, e))
 
 
 def roe_averaged_speeds(Ul, Ur, nx, gamma=1.4):
-    rhoL, uL, vL, wL, pL, EL = conserved_to_primitive(Ul, gamma)
-    rhoR, uR, vR, wR, pR, ER = conserved_to_primitive(Ur, gamma)
+    rhoL, uL, vL, wL, pL, EL, eL = conserved_to_primitive(Ul, gamma)
+    rhoR, uR, vR, wR, pR, ER, eR = conserved_to_primitive(Ur, gamma)
 
     # enthalpies
     HL = (EL + pL) / rhoL
@@ -67,6 +89,20 @@ def roe_averaged_speeds(Ul, Ur, nx, gamma=1.4):
     )
     return SL, SR
 
+def HLLC(Ul, Ur, n, gamma=1.4):
+
+    SL, SR = roe_averaged_speeds(Ul, Ur, n, gamma)
+    rhol, ul, vl, wl, pl, El, el = conserved_to_primitive(Ul)
+    rhor, ur, vr, wr, pr, Er, er = conserved_to_primitive(Ur)
+    ql = ul * n[0] + vl * n[1] + wl * n[2]
+    qr = ur * n[0] + vr * n[1] + wr * n[2]
+    SM = (rhor * qr (SR - qr) - rhol*ql*(SL-ql) + pl - pr) / (rhor*(SR-qr) - rhol*(SL-ql))
+
+    Fl = euler_flux(Ul, n, gamma)
+    Fr = euler_flux(Ur, n, gamma)
+
+    F = np.where(SR<0, Fr, np.where(SL>0, Fl, (SR * Fl - SL*Fr + SL*SR*(Ur-Ul))/(SR - SL) ))
+    return F, SL, SR
 
 def HLL(Ul, Ur, n, gamma=1.4):
 
@@ -75,11 +111,8 @@ def HLL(Ul, Ur, n, gamma=1.4):
     Fl = euler_flux(Ul, n, gamma)
     Fr = euler_flux(Ur, n, gamma)
 
-    t1 = (np.minimum(SR, 0) - np.minimum(SL, 0)) / (SR - SL)
-    t2 = 1 - t1
-    t3 = (SR * np.abs(SL) - SL * np.abs(SR)) / (2 * (SR - SL))
-
-    return t1 * Fr + t2 * Fl - t3 * (Ur - Ul), SL, SR
+    F = np.where(SR<0, Fr, np.where(SL>0, Fl, (SR * Fl - SL*Fr + SL*SR*(Ur-Ul))/(SR - SL) ))
+    return F, SL, SR
 
 
 def evolve1d(dx, U0, T, gamma=1.4, CFL=0.5):
@@ -91,29 +124,59 @@ def evolve1d(dx, U0, T, gamma=1.4, CFL=0.5):
         F, SL, SR = HLL(U[:, :-1], U[:, 1:], np.array([1, 0, 0]), gamma)
 
         max_speed = np.max(np.abs(np.hstack((SL, SR))))
-        dtCFL = CFL * dx / max_speed if max_speed > 1e-14 else 1e-6
+        dtCFL = CFL * dx / (2*max_speed) if max_speed > 1e-14 else 1e-6
         dt = min(T - t, dtCFL)
 
         U[:, 1:-1] -= (dt / dx) * (F[:, 1:] - F[:, :-1])
+        U[:, 0] = U[:,1]
+        U[:, -1] = U[:,-2]
         t += dt
+
     return U
 
 
 CFL = 0.5
-T = 0.4
+T = 0.2
 nx = 1000
-x = np.linspace(0, 1, nx)
+x = np.linspace(-.2, .5, nx)
 xh = 0.5 * (x[1:] + x[:-1])
 dx = xh[1] - xh[0]
 
 n = np.array([1, 0, 0])
 
-# U0 pour Sod's shock tube
+# U0 pour Toro's shock tube problem
 U = np.zeros((5, nx - 1))
-U[0] = np.where(xh < 0.5, 1, 0.125)
-U[4] = np.where(xh < 0.5, 1.0, 0.1)
+U[0] = np.where(xh < 0, 1, 0.125) # density rho
+U[1] = np.where(xh < 0, .75, 0.) # velocity u
+U[4] = np.where(xh < 0, 1, 0.1) # pressure p
+U = primitive_to_conserved(U)
+print(U.shape)
 
 
 U = evolve1d(dx, U, T, gamma=1.4, CFL=CFL)
-plt.plot(xh, conserved_to_primitive(U)[0])
-plt.title("Euler")
+
+plt.figure(figsize=(10,10))
+
+ax = plt.subplot(2,2,1)
+ax.plot(xh, U[0], "-", label="HLL")
+ax.set_xlabel("space")
+ax.set_ylabel("density (rho)")
+ax.legend()
+
+ax = plt.subplot(2,2,2)
+ax.plot(xh, conserved_to_primitive(U)[1], "-", label="HLL")
+ax.set_xlabel("space")
+ax.set_ylabel("velocity (u)")
+ax.legend()
+
+ax = plt.subplot(2,2,3)
+ax.plot(xh, conserved_to_primitive(U)[4], "-", label="HLL")
+ax.set_xlabel("space")
+ax.set_ylabel("Pressure (p)")
+ax.legend()
+
+ax = plt.subplot(2,2,4)
+ax.plot(xh, conserved_to_primitive(U)[6]/U[0], "-", label="HLL")
+ax.set_xlabel("space")
+ax.set_ylabel("Energy (E)")
+ax.legend()
