@@ -144,3 +144,11 @@ plt.plot(x,U, label="CIR")
 plt.legend()
 
 # %%
+
+
+def HLL(x, u0, T, flux, dflux, CFL):
+
+    dx = x[1]-x[0] # assuming even space
+    
+
+
