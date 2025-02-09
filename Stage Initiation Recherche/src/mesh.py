@@ -15,10 +15,12 @@ class Vertex:
 @dataclass(slots=True)
 class HalfEdge:
     origin: Optional[Vertex] = None
-    hypothenuse: bool
     twin: Optional["HalfEdge"] = None
     next: Optional["HalfEdge"] = None
     face: Optional["Face"] = None
+
+    def __post_init__(self):
+        self.origin.edge = self
 
     @cached_property
     def length(self):
@@ -26,11 +28,20 @@ class HalfEdge:
         ly = (self.origin.y-self.next.origin.y)**2
         return math.sqrt(lx+ly)
 
+    def __eq__(self, other):
+        if isinstance(other, HalfEdge):
+            return self.origin == other.origin and self.next.origin == other.next.origin
+
 @dataclass(slots=True)
 class Face:
     half_edge: Optional[HalfEdge] = None # one of his half_edges
     parent: Optional["Face"] = None
     children: list["Face"] = field(default_factory=list)
+    times_refined: int = 0
+
+    @cached_property
+    def longest_half_edge(self):
+        return max(self.edge_list, key=lambda he: he.length) # Hypotenuse edge
 
     @cached_property
     def centroid(self) -> Vertex:
@@ -42,6 +53,47 @@ class Face:
         assert self.half_edge.next != None
         assert self.half_edge.next.next != None
         return [self.half_edge, self.half_edge.next, self.half_edge.next.next]
+
+    def make_Face(v0:Vertex, v1:Vertex, v2:Vertex, times_refined : int = 0):
+        he = HalfEdge(v0, next=HalfEdge(v1, next=HalfEdge(v2)))
+        he.next.next.next=he
+        f = Face(he, times_refined=times_refined)
+        he.face = he.next.face = he.next.next.face = f
+        f.longest_half_edge()
+        return f
+
+    # [href=https://www.math.uci.edu/~chenlong/ifemdoc/afem/bisectdoc.html] not really used in fact since triangles are rectangle
+    def refine(self, he:Optional[HalfEdge]):
+        """
+            Refines face by hypotenuse bisect
+            If half-edge is given, it means we are looking for refining near a specific
+            half-edge.
+        """
+        hye = self.longest_half_edge
+
+        # create mid point and new faces
+        vm = Vertex((hye.origin.x+hye.next.origin.x)/2,(hye.origin.y+hye.next.origin.y)/2)
+        v0 = hye.next.next.origin # opposite of hypotenuse
+        v1 = hye.next.origin # "Left" (not necessarily)
+        v2 = hye.origin      # "Right"
+        f0 = Face.make_Face(v2,vm,v0, times_refined=self.times_refined+1) # v0, v2 for clockwise
+        f1 = Face.make_Face(vm,v1,v0, times_refined=self.times_refined+1)
+        self.children.extend([f0,f1])
+
+        # Ajust twin Half-edges
+        neighbor = hye.twin.face
+        if hye.twin != None: # In principle, if it's out of bounds we dgaf
+            while self.face.times_refined > neighbor.times_refined:
+                neighbor = neighbor.refine(hye.twin) # refined neighbor
+            nhem1, nhem2 = neighbor.refine() # nhem = neighbor common Half-edge part 1,2
+        # return face that contains half-edge he if given
+        if he:
+            # Check which new face contains hypothenuse:
+            if he in f0.edge_list: return f0
+            else: return f1
+        else:
+            return f0.half_edge, f1.half_edge
+
     
 
 @dataclass(slots=True)
@@ -91,7 +143,7 @@ class Mesh:
 
                 he0.twin=he1
                 he1.twin=he0
-                self.half_edges.extend([he0, he0.next, he0.next.next,he1,he1.next,he1.next.next])
+                # self.half_edges.extend([he0, he0.next, he0.next.next,he1,he1.next,he1.next.next])
 
                 f0 = Face(he0)
                 f1 = Face(he1)
@@ -100,6 +152,8 @@ class Mesh:
                 he1.face = f1
 
                 self.faces.extend([f0,f1])
+                self.half_edges.extend(f0.edge_list)
+                self.half_edges.extend(f1.edge_list)
                 previous_row_top.append(f1)
 
                 if previous_face == None:
@@ -117,10 +171,3 @@ class Mesh:
         print(f"{len(self.faces)} faces created.")
         print(f"{self.nx} by {self.ny} mesh built")
     
-    # [href=https://www.math.uci.edu/~chenlong/ifemdoc/afem/bisectdoc.html] not really used in fact since triangles are rectangle
-    def refine_face(self, face: Face):
-        """Refines face by hypotenuse bisect"""
-        hes = face.edge_list
-        hypotenuse = min(hes, key=lambda he: he.length)
-        face.children.append()
-        
