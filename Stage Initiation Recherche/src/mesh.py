@@ -1,136 +1,126 @@
 import numpy as np
 import math
-from typing import Final
-from dataclasses import field, dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
+from typing import Optional
 
 """ 2D """
 
 @dataclass(slots=True)
-class Point:
-    id: int
+class Vertex:
     x: float
     y: float
+    edge: Optional["HalfEdge"] = None
 
 @dataclass(slots=True)
-class Face: # A line essentially
-    id: int
-    vertices: tuple[int, int] # Ids
-    length: float # same here, length could be calculated based on triangle's order
+class HalfEdge:
+    origin: Optional[Vertex] = None
+    hypothenuse: bool
+    twin: Optional["HalfEdge"] = None
+    next: Optional["HalfEdge"] = None
+    face: Optional["Face"] = None
 
-    # def __post_init__(self):
-    #     self.center = (self.vertices[1]+self.vertices[0])/2
+    @cached_property
+    def length(self):
+        lx = (self.origin.x-self.next.origin.x)**2
+        ly = (self.origin.y-self.next.origin.y)**2
+        return math.sqrt(lx+ly)
 
 @dataclass(slots=True)
-class Triangle: # Cell, really. Triangles will be isosceles
-    id: int
-    faces: tuple[int, int, int] # Hypothenuse is last ? anyway, computable by edge length
-    centroid: Point
-    area: float # area is really = base_area / 2**order
-    order: int = 0 # Number of times Shrunk, this is for connecting properly with neighbors
-               # For instance, an adjacent side of order n must either be for its neighbor
-               # (1) an adjacent side and the neighbor be a triangle of same order
-               # (2) the neighbor's hypothenuse and neighbor be a triangle of order-1
-               # Rephrased:
-               # an edge that is a hypothenuse on either side implies that the sides share the same order
-               # an edge that is adjacent on either side implies that the neighbors share the same order
-               # if the edge is adjacent on one side and hypothenuse on the other, the hypothenuse side must be 1 order higher
+class Face:
+    half_edge: Optional[HalfEdge] = None # one of his half_edges
+    parent: Optional["Face"] = None
+    children: list["Face"] = field(default_factory=list)
 
+    @cached_property
+    def centroid(self) -> Vertex:
+        return Vertex(sum([he.origin.x for he in self.edge_list])/3, sum([he.origin.y for he in [he1,he2,he3]])/3)
+
+    @property
+    def edge_list(self):
+        assert self.half_edge != None
+        assert self.half_edge.next != None
+        assert self.half_edge.next.next != None
+        return [self.half_edge, self.half_edge.next, self.half_edge.next.next]
+    
+
+@dataclass(slots=True)
 class Mesh:
+    nx: int
+    ny: int
+    dx: float = field(init=False)
+    dy: float = field(init=False)
+    bounds: tuple[tuple[float,float], tuple[float,float]]
+    vertices: list[Vertex] = field(default_factory=list)
+    half_edges: list[HalfEdge] = field(default_factory=list)
+    faces: list[Face] = field(default_factory=list)
 
-    def __init__(self, shape: tuple[int, int], bounds: tuple[tuple[int,int], ...]):
-        self.shape = shape
-        self.bounds = bounds # No incorrect input checking for now | Rectangular domain
-        self.dx = (bounds[0][1]-bounds[0][0])/(shape[0]-1)
-        self.dy = (bounds[1][1]-bounds[1][0])/(shape[1]-1)
-        self.points : dict[int: Point] = {}
-        self.centroids : dict[int: Point] = {}
-        self.faces : dict[int: Face] = {}
-        self.cells : dict[int: Triangle]={} # id : Cell
-        self.connectivity: dict[int: tuple[int,int,int]]={} # Cell id to Neighbor Cells id
-        self.boundary_cells = list[Triangle]
+    def __post_init__(self):
 
-        point_id = 0
-        face_id = 0
-        cell_id = 0
+        print("Mesh post init")
 
-        prev_column_points = []
-        prev_column_faces = []
-        for ix in range(self.shape[0]-1):
-            for iy in range(self.shape[1]-1):
+        self.dx = (self.bounds[0][1]-self.bounds[0][0])/(self.nx-1)
+        self.dy = (self.bounds[1][1]-self.bounds[1][0])/(self.ny-1)
 
-                if ix==0:
-                    pUL = Point(point_id,self.bounds[0][0]+self.dx*ix, self.bounds[1][0]+self.dy*(iy+1))
-                    self.points[point_id] = pUL
-                    point_id+=1
-                    if iy == 0:
-                        pDL = Point(point_id, self.bounds[0][0]+self.dx*ix, self.bounds[1][0]+self.dy*iy)
-                        self.points[point_id] = pDL
-                        point_id+=1
-                        pDR = Point(point_id, self.bounds[0][0]+self.dx*(ix+1), self.bounds[1][0]+self.dy*iy)
-                        self.points[point_id] = pDR
-                        point_id+=1
-                        prev_column_points.append(pDR)
-                        bottom = Face(face_id, [pDL.id, pDR.id], length=self.dx)
-                        self.faces[face_id] = bottom
-                        face_id+=1
-                        left = Face(face_id, [pDL.id, pUL.id], length=self.dy)
-                        self.faces[face_id] = left
-                        face_id+=1
-                    else:
-                        left = Face(face_id, [pDL.id, pUL.id], length=self.dy)
-                        self.faces[face_id] = left
-                        face_id+=1
-                        pDL = pUL
-                        pDR = pUR
-                        bottom = top
+        # Creating vertices
+
+        Y = np.linspace(*self.bounds[1], self.ny)
+        X = np.linspace(*self.bounds[0], self.nx)
+        for y in Y:
+            for x in X:
+                self.vertices.append(Vertex(x, y))
+        print(f"{len(self.vertices)} vertices created.")
+
+        # Creating half-edges and faces:
+        previous_row_top = []
+        for iy, y in enumerate(Y[:-1]):
+            previous_face = None
+            for ix, x in enumerate(X[:-1]):
+
+                id = ix + self.nx*iy
+
+                v0 = self.vertices[id] # (0,0)
+                v1 = self.vertices[id+1] # (0,1)
+                v2 = self.vertices[id+self.nx] # (1,0)
+                v3 = self.vertices[id+1+self.nx] # (1,1)
+
+                he0 = HalfEdge(v2, next=HalfEdge(v1, next=HalfEdge(v0)))
+                he0.next.next.next=he0
+                he1 = HalfEdge(v1, next=HalfEdge(v2, next=HalfEdge(v3)))
+                he1.next.next.next=he1
+
+                he0.twin=he1
+                he1.twin=he0
+                self.half_edges.extend([he0, he0.next, he0.next.next,he1,he1.next,he1.next.next])
+
+                f0 = Face(he0)
+                f1 = Face(he1)
+
+                he0.face = f0
+                he1.face = f1
+
+                self.faces.extend([f0,f1])
+                previous_row_top.append(f1)
+
+                if previous_face == None:
+                    previous_face = f1
                 else:
-                    if iy==0:
-                        pDR = Point(point_id, self.bounds[0][0]+self.dx*(ix+1), self.bounds[1][0]+self.dy*iy)
-                        self.points[point_id] = pDR
-                        point_id+=1
-                        prev_column_points.append(pDR)
-                        pDL = prev_column_points.pop(0)
-                        bottom = Face(face_id, [pDL.id, pDR.id], length=self.dx)
-                        self.faces[face_id] = bottom
-                        face_id+=1
-                    else:
-                        pDR = pUR
-                        bottom = top
-                    pUL = prev_column_points.pop(0)
-                    left = prev_column_faces.pop(0)
+                    f0.half_edge.next.next.twin = previous_face.half_edge.next.next
+                    previous_face.half_edge.next.next.twin = f0.half_edge.next.next
 
-                pUR = Point(point_id, self.bounds[0][0]+self.dx*(ix+1), self.bounds[1][0]+self.dy*(iy+1))
-                self.points[point_id] = pUR
-                point_id+=1
-                prev_column_points.append(pUR) # appending points to Y column
+                if ix!=0:
+                    down_face = previous_row_top.pop()
+                    f0.half_edge.twin = down_face.half_edge.next
+                    down_face.half_edge.next.twin = he0
 
-                right = Face(face_id, [pDR.id, pUR.id], length=self.dy)
-                self.faces[face_id] = right
-                prev_column_faces.append(right)
-                face_id +=1
-
-                middle = Face(face_id, [pUL.id, pDR.id], length=np.sqrt(self.dx**2 + self.dy**2))
-                self.faces[face_id] = middle
-                face_id += 1
-
-                top = Face(face_id, [pUL.id, pUR.id], length=self.dx)
-                self.faces[face_id] = top
-                face_id += 1
-
-                sqrt2 = math.sqrt(2)
-                left_centroid = Point(point_id, pDL.x + sqrt2 * self.dx/2, pDL.y + sqrt2 * self.dy/2)
-                self.centroids[point_id] = left_centroid
-                point_id+=1
-
-                self.cells[cell_id] = Triangle(cell_id, [bottom.id, left.id, middle.id], left_centroid, self.dx*self.dy/2)
-                cell_id += 1
-                right_centroid= Point(point_id, pUR.x - sqrt2 * self.dx/2, pUR.y - sqrt2 * self.dy/2)
-                self.centroids[point_id] = right_centroid
-                point_id+=1
-                self.cells[cell_id] = Triangle(cell_id, [top.id, right.id, middle.id], right_centroid, self.dx*self.dy/2)
-                cell_id += 1
-
-                
-                # if ix == 0 or iy == 0 or ix==self.shape[0]-1 or iy==self.shape[1]-1:
-                #     self.boundary_cells.append(id)
-                # self.cells[id: Triangle(id, )]
+        print(f"{len(self.half_edges)} half edges created.")
+        print(f"{len(self.faces)} faces created.")
+        print(f"{self.nx} by {self.ny} mesh built")
+    
+    # [href=https://www.math.uci.edu/~chenlong/ifemdoc/afem/bisectdoc.html] not really used in fact since triangles are rectangle
+    def refine_face(self, face: Face):
+        """Refines face by hypotenuse bisect"""
+        hes = face.edge_list
+        hypotenuse = min(hes, key=lambda he: he.length)
+        face.children.append()
+        
