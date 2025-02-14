@@ -3,27 +3,61 @@ import math
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Optional
+import matplotlib.pyplot as plt
 
 """ 2D """
+
+def draw_face(face,color='black'):
+    he = face.half_edge
+    vertices = []
+    start = he
+    while True:
+        vertices.append((he.origin.x, he.origin.y))
+        he = he.next
+        if he == start:
+            break
+    vertices.append(vertices[0])  # close the loop
+    xs, ys = zip(*vertices)
+    plt.plot(xs, ys, '-', color=color)  # draw triangle boundary in black
+
+def draw_edge(he,color='blue'):
+    vertices = []
+    vertices.append((he.origin.x, he.origin.y))
+    vertices.append((he.next.origin.x, he.next.origin.y))
+    xs, ys = zip(*vertices)
+    plt.plot(xs, ys, '-', color=color)  # draw triangle boundary in black
 
 @dataclass(slots=True)
 class Vertex:
     x: float
     y: float
-    edge: Optional["HalfEdge"] = None
+    edge: Optional["HalfEdge"] = field(default=None, repr=False)
 
-@dataclass(slots=True)
+    def __eq__(self, other):
+        if isinstance(other, Vertex):
+            return math.isclose(self.x, other.x) and math.isclose(self.y, other.y)
+        
+    def __add__(self, other):
+        if isinstance(other, Vertex):
+            return Vertex(self.x+other.x, self.y+other.y, edge=None)
+
+    def __repr__(self):
+        return f"Vertex(x={self.x:.4f},y={self.y:.4f})"
+
+@dataclass
 class HalfEdge:
-    origin: Optional[Vertex] = None
-    twin: Optional["HalfEdge"] = None
-    next: Optional["HalfEdge"] = None
-    face: Optional["Face"] = None
+    origin: Vertex = None
+    twin: Optional["HalfEdge"] = field(default=None)
+    next: Optional["HalfEdge"] = field(default=None)
+    face: Optional["Face"] = field(default=None)
 
     def __post_init__(self):
         self.origin.edge = self
 
     @cached_property
     def length(self):
+        assert self.origin != None
+        assert self.next.origin != None
         lx = (self.origin.x-self.next.origin.x)**2
         ly = (self.origin.y-self.next.origin.y)**2
         return math.sqrt(lx+ly)
@@ -31,13 +65,28 @@ class HalfEdge:
     def __eq__(self, other):
         if isinstance(other, HalfEdge):
             return self.origin == other.origin and self.next.origin == other.next.origin
+        
+    def __repr__(self):
+        w =f"HalfEdge(origin={self.origin}, "
+        w += (f"next={self.next.origin}" if self.next else "next=None") + ", "
+        w += (f"twin_id={id(self.twin)}" if self.twin else "twin=None") + ", "
+        w += f"face_centroid={self.face.centroid})"
+        return w
 
-@dataclass(slots=True)
+@dataclass
 class Face:
     half_edge: Optional[HalfEdge] = None # one of his half_edges
-    parent: Optional["Face"] = None
-    children: list["Face"] = field(default_factory=list)
-    times_refined: int = 0
+    parent: Optional["Face"] = field(default=None, repr=False)
+    children: list["Face"] = field(default_factory=list, repr=False)
+    level: int = 0
+
+    def __repr__(self):
+        w =f"""Face(points={self.half_edge.origin, self.half_edge.next.origin, self.half_edge.next.next.origin},
+        Edges= {self.half_edge, self.half_edge.next, self.half_edge.next.next}
+        has_parent={self.parent!=None},
+        children={len(self.children)},
+        level={self.level})"""
+        return w
 
     @cached_property
     def longest_half_edge(self):
@@ -45,7 +94,7 @@ class Face:
 
     @cached_property
     def centroid(self) -> Vertex:
-        return Vertex(sum([he.origin.x for he in self.edge_list])/3, sum([he.origin.y for he in [he1,he2,he3]])/3)
+        return Vertex(sum(he.origin.x for he in self.edge_list)/3, sum(he.origin.y for he in self.edge_list)/3)
 
     @property
     def edge_list(self):
@@ -54,47 +103,71 @@ class Face:
         assert self.half_edge.next.next != None
         return [self.half_edge, self.half_edge.next, self.half_edge.next.next]
 
-    def make_Face(v0:Vertex, v1:Vertex, v2:Vertex, times_refined : int = 0):
+    @classmethod
+    def make_Face(cls, v0:Vertex, v1:Vertex, v2:Vertex, level: int = 0):
+        """
+            Returns a face composed with parameter induced half edges.
+            Remark: face.halfedge is v0 to v1
+        """
         he = HalfEdge(v0, next=HalfEdge(v1, next=HalfEdge(v2)))
-        he.next.next.next=he
-        f = Face(he, times_refined=times_refined)
+        he.next.next.next=he # close the triangle
+        f = Face(he, level=level)
         he.face = he.next.face = he.next.next.face = f
-        f.longest_half_edge()
         return f
 
-    # [href=https://www.math.uci.edu/~chenlong/ifemdoc/afem/bisectdoc.html] not really used in fact since triangles are rectangle
-    def refine(self, he:Optional[HalfEdge]):
+    def refine(self, common_edge:Optional[HalfEdge]=None):
         """
-            Refines face by hypotenuse bisect
+            Refines face by hypotenuse bisect.
             If half-edge is given, it means we are looking for refining near a specific
             half-edge.
+            Return (face, face), the two new faces created
         """
-        hye = self.longest_half_edge
+        hyp: HalfEdge = self.longest_half_edge
 
         # create mid point and new faces
-        vm = Vertex((hye.origin.x+hye.next.origin.x)/2,(hye.origin.y+hye.next.origin.y)/2)
-        v0 = hye.next.next.origin # opposite of hypotenuse
-        v1 = hye.next.origin # "Left" (not necessarily)
-        v2 = hye.origin      # "Right"
-        f0 = Face.make_Face(v2,vm,v0, times_refined=self.times_refined+1) # v0, v2 for clockwise
-        f1 = Face.make_Face(vm,v1,v0, times_refined=self.times_refined+1)
-        self.children.extend([f0,f1])
+        midpoint: Vertex = Vertex((hyp.origin.x+hyp.next.origin.x)/2,(hyp.origin.y+hyp.next.origin.y)/2)
 
-        # Ajust twin Half-edges
-        neighbor = hye.twin.face
-        if hye.twin != None: # In principle, if it's out of bounds we dgaf
-            while self.face.times_refined > neighbor.times_refined:
-                neighbor = neighbor.refine(hye.twin) # refined neighbor
-            nhem1, nhem2 = neighbor.refine() # nhem = neighbor common Half-edge part 1,2
-        # return face that contains half-edge he if given
-        if he:
-            # Check which new face contains hypothenuse:
-            if he in f0.edge_list: return f0
-            else: return f1
-        else:
-            return f0.half_edge, f1.half_edge
+        A: Vertex = hyp.next.next.origin # opposite of hypotenuse
+        B: Vertex = hyp.next.origin # "Left" (not necessarily)
+        C: Vertex = hyp.origin      # "Right"
 
-    
+        f0: Face = Face.make_Face(C, midpoint, A, level=self.level+1) # v0, v2 for clockwise
+        f1: Face = Face.make_Face(midpoint, B, A, level=self.level+1) # Also, f0,f1.halfedge gives the newly created half edge (hypotenuse split)
+
+        # Pair common edge
+        f0.half_edge.next.twin=f1.half_edge.next.next
+        f1.half_edge.next.next.twin=f0.half_edge.next
+
+        f0.half_edge.next.next.twin=hyp.next.next.twin
+        hyp.next.next.twin=f0.half_edge.next.next
+
+        f1.half_edge.next.twin=hyp.next.twin
+        hyp.next.twin=f0.half_edge.next
+
+        self.children.extend([f0,f1]) # Congratulations
+        f0.parent = f1.parent = self
+
+        if common_edge and hyp == common_edge.twin:
+            return f0, f1
+        if hyp.twin is not None:
+            neighbor = hyp.twin.face
+            while neighbor.level <= self.level:
+                neighbor0, neighbor1 = neighbor.refine(hyp)
+                if hyp.twin in neighbor0.edge_list:
+                    neighbor = neighbor0
+                    # created_faces.append(neighbor1)replaced: full tree traversal for now
+                else:
+                    neighbor = neighbor1
+                    # created_faces.append(neighbor0)replaced: full tree traversal for now
+                # created_faces.extend(extra_faces) replaced: full tree traversal for now
+                # equal (or higher) levels garantees connectivity (non dangling vertices)
+            neighbor.half_edge.twin = f1.half_edge
+            f1.twin = neighbor.half_edge
+            neighbor.half_edge.next.twin = f0.half_edge
+            f0.twin = neighbor.half_edge.next
+            # else: hypotenuse.twin.face is border so we dgaf
+        return f0, f1 #, created_faces # replaced: full tree traversal for now
+
 
 @dataclass(slots=True)
 class Mesh:
@@ -104,10 +177,14 @@ class Mesh:
     dy: float = field(init=False)
     bounds: tuple[tuple[float,float], tuple[float,float]]
     vertices: list[Vertex] = field(default_factory=list)
-    half_edges: list[HalfEdge] = field(default_factory=list)
+    active_faces: list[Face] = field(default_factory=list)
+    # half_edges: list[HalfEdge] = field(default_factory=list)
     faces: list[Face] = field(default_factory=list)
 
     def __post_init__(self):
+        self._generate_mesh()
+
+    def _generate_mesh(self):
 
         print("Mesh post init")
 
@@ -115,7 +192,6 @@ class Mesh:
         self.dy = (self.bounds[1][1]-self.bounds[1][0])/(self.ny-1)
 
         # Creating vertices
-
         Y = np.linspace(*self.bounds[1], self.ny)
         X = np.linspace(*self.bounds[0], self.nx)
         for y in Y:
@@ -123,51 +199,58 @@ class Mesh:
                 self.vertices.append(Vertex(x, y))
         print(f"{len(self.vertices)} vertices created.")
 
+        edges={}
+
+        def pair(he):
+            key = (id(he.origin), id(he.next.origin))
+            twin_key = (id(he.next.origin), id(he.origin))
+            if twin_key in edges:
+                twin_he = edges[twin_key]
+                twin_he.twin = he
+                he.twin = twin_he
+            else:
+                edges[key] = he
+
+
         # Creating half-edges and faces:
-        previous_row_top = []
         for iy, y in enumerate(Y[:-1]):
-            previous_face = None
             for ix, x in enumerate(X[:-1]):
 
-                id = ix + self.nx*iy
+                _id = ix + self.nx*iy
 
-                v0 = self.vertices[id] # (0,0)
-                v1 = self.vertices[id+1] # (0,1)
-                v2 = self.vertices[id+self.nx] # (1,0)
-                v3 = self.vertices[id+1+self.nx] # (1,1)
+                bottom_left = self.vertices[_id] # (0,0)
+                bottom_right = self.vertices[_id+1] # (1,0)
+                top_left = self.vertices[_id+self.nx] # (0,1)
+                top_right = self.vertices[_id+1+self.nx] # (1,1)
 
-                he0 = HalfEdge(v2, next=HalfEdge(v1, next=HalfEdge(v0)))
-                he0.next.next.next=he0
-                he1 = HalfEdge(v1, next=HalfEdge(v2, next=HalfEdge(v3)))
-                he1.next.next.next=he1
+                f0 = Face.make_Face(top_left, bottom_right, bottom_left)
+                f1 = Face.make_Face(bottom_right, top_left, top_right)
 
-                he0.twin=he1
-                he1.twin=he0
-                # self.half_edges.extend([he0, he0.next, he0.next.next,he1,he1.next,he1.next.next])
+                f0.half_edge.twin= f1.half_edge
+                f1.half_edge.twin= f0.half_edge
 
-                f0 = Face(he0)
-                f1 = Face(he1)
-
-                he0.face = f0
-                he1.face = f1
-
+                for face in [f0,f1]:
+                    for he in face.edge_list:
+                        pair(he)
                 self.faces.extend([f0,f1])
-                self.half_edges.extend(f0.edge_list)
-                self.half_edges.extend(f1.edge_list)
-                previous_row_top.append(f1)
 
-                if previous_face == None:
-                    previous_face = f1
-                else:
-                    f0.half_edge.next.next.twin = previous_face.half_edge.next.next
-                    previous_face.half_edge.next.next.twin = f0.half_edge.next.next
-
-                if ix!=0:
-                    down_face = previous_row_top.pop()
-                    f0.half_edge.twin = down_face.half_edge.next
-                    down_face.half_edge.next.twin = he0
-
-        print(f"{len(self.half_edges)} half edges created.")
+        self.active_faces = self.faces
+        # print(f"{len(self.half_edges)} half edges created.")
         print(f"{len(self.faces)} faces created.")
         print(f"{self.nx} by {self.ny} mesh built")
     
+    def refine(self, face):
+        assert face in self.active_faces, f"Face: {face} not present in mesh's faces"
+        face.refine()
+        self.get_active_faces()
+
+    def get_active_faces(self):
+        self.active_faces = []
+        def find_leaves(face):
+            if len(face.children):
+                yield from find_leaves(face.children[0])
+                yield from find_leaves(face.children[1])
+            else: yield face
+
+        for face in self.faces:
+            self.active_faces.extend(list(find_leaves(face)))
