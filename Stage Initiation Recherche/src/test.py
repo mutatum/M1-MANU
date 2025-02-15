@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import math
 import mesh  # your mesh module with Mesh, Face, Vertex, HalfEdge
 
-def draw_face(face,color):
+def draw_face(face,color='black'):
     he = face.half_edge
     vertices = []
     start = he
@@ -88,19 +88,20 @@ def plot_mesh(mesh: mesh.Mesh, arrows:bool = False):
     plt.show()
 
 
-m = mesh.Mesh(7,7, ((0,1), (0,1)))
-# vx = [v.x for v in m.vertices]
-# vy = [v.y for v in m.vertices]
-# plt.scatter(vx,vy)
-# plt.grid()
-# for f in m.faces:
-    # draw_face(f)
+m = mesh.Mesh(2,2, ((0,1), (0,1)))
+
+for i in range(5):
+    print('\n\n\n', 'active faces: \n',
+          m.active_faces,'\n\n\n')
+    plt.figure(figsize=(3,3))
+    plt.grid()
+    plt.axis([0,1,0,1])
+    draw_face(m.active_faces[1])
+    m.refine(m.active_faces[1]);
+    plot_mesh(m,arrows=True)
 
 # plot_mesh(m,arrows=True)
-m.refine(m.active_faces[9*9//2]);
+# m.refine(m.active_faces[3*3//2]);
 # plot_mesh(m,arrows=True)
-m.refine(m.active_faces[9*9//2]);
+# m.refine(m.active_faces[3*3//2]);
 # plot_mesh(m,arrows=True)
-for i in range(5):
-    m.refine(m.active_faces[2]);
-    plot_mesh(m,arrows=True)
