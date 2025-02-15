@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 """ 2D """
 
-def draw_face(face,color='black'):
+def draw_face(face,style='-', color='black',arrows=True):
     he = face.half_edge
     vertices = []
     start = he
@@ -18,7 +18,33 @@ def draw_face(face,color='black'):
             break
     vertices.append(vertices[0])  # close the loop
     xs, ys = zip(*vertices)
-    plt.plot(xs, ys, '-', color=color)  # draw triangle boundary in black
+    plt.plot(xs, ys, style,color=color)  # draw triangle boundary in black
+    if arrows:
+        plt.text(face.centroid.x, face.centroid.y, f"{face.level}", 
+                color=color, fontsize=12, ha='center', va='center')
+        for i,he in enumerate(face.edge_list):
+            arrow_color = ['red', 'green', 'blue'][i % 3]
+            # Compute the midpoint of the half-edge.
+            x_start, y_start = he.origin.x, he.origin.y
+            x_end, y_end = he.next.origin.x, he.next.origin.y
+            a,b = .73, .27
+            xm, ym = (x_start+ x_end)/2, (y_start + y_end)/2
+            xm1, ym1 = (x_start*a+ x_end*b), (y_start*a + y_end*b)
+            
+            # Compute an inward offset: from midpoint towards face centroid.
+            cx, cy = face.centroid.x, face.centroid.y
+            nx, ny = cx - xm, cy - ym
+            norm = math.hypot(nx, ny)
+            if norm != 0:
+                nx, ny = nx / norm, ny / norm
+            offset = 0.011  # adjust offset magnitude as needed.
+            xm_offset, ym_offset = xm1 + nx * offset, ym1 + ny * offset
+            
+            # Arrow vector along half-edge (scaled for clarity).
+            dx, dy = (x_end - x_start) * 0.45, (y_end - y_start) * 0.45
+            
+            plt.arrow(xm_offset, ym_offset, dx, dy, head_width=0.013, head_length=norm*.3,
+                    fc=arrow_color, ec=arrow_color, length_includes_head=True)
 
 def draw_edge(he,color='blue'):
     vertices = []
@@ -69,7 +95,7 @@ class HalfEdge:
     def __repr__(self):
         w =f"HalfEdge(origin={self.origin}, "
         w += (f"next={self.next.origin}" if self.next else "next=None") + ", "
-        w += (f"twin_id={id(self.twin)}" if self.twin else "twin=None") + ", "
+        w += (f"twin={self.twin.origin, self.twin.next.origin}" if self.twin else "twin=None") + ", "
         w += f"face_centroid={self.face.centroid})"
         return w
 
@@ -88,7 +114,7 @@ class Face:
         level={self.level})"""
         return w
 
-    @cached_property
+    @property
     def longest_half_edge(self):
         return max(self.edge_list, key=lambda he: he.length) # Hypotenuse edge
 
@@ -123,6 +149,8 @@ class Face:
             Return (face, face), the two new faces created
         """
         hyp: HalfEdge = self.longest_half_edge
+        print("refine, hyp: ", hyp)
+        print("hyp.twin: ", hyp.twin)
 
         # create mid point and new faces
         midpoint: Vertex = Vertex((hyp.origin.x+hyp.next.origin.x)/2,(hyp.origin.y+hyp.next.origin.y)/2)
@@ -139,33 +167,51 @@ class Face:
         f1.half_edge.next.next.twin=f0.half_edge.next
 
         f0.half_edge.next.next.twin=hyp.next.next.twin
-        hyp.next.next.twin=f0.half_edge.next.next
+        if hyp.next.next.twin is not None:
+            hyp.next.next.twin=f0.half_edge.next.next
 
         f1.half_edge.next.twin=hyp.next.twin
-        hyp.next.twin=f0.half_edge.next
+        if hyp.next.twin is not None:
+            hyp.next.twin=f1.half_edge.next
 
         self.children.extend([f0,f1]) # Congratulations
         f0.parent = f1.parent = self
 
+        plt.figure(figsize=(5,5))
+        plt.grid()
+        plt.axis([0,1,0,1])
+        # draw_face(self, style='-',color='black',arrows=False)
+        draw_face(f0,style='-',color='red')
+        draw_face(f1,color='blue')
         if common_edge and hyp == common_edge.twin:
-            return f0, f1
-        if hyp.twin is not None:
+            print(f0,f1)
+        elif hyp.twin is not None:
             neighbor = hyp.twin.face
+            print("about to refine neighbor: ", neighbor)
+            print("hyp.twin: ", hyp.twin)
+            print("bisect: ", f0.half_edge.next)
             while neighbor.level <= self.level:
+                print(f"neighbor.level: {neighbor.level}, self.level: {self.level}")
+            # equal (or higher) levels garantees connectivity (non dangling vertices)
                 neighbor0, neighbor1 = neighbor.refine(hyp)
                 if hyp.twin in neighbor0.edge_list:
                     neighbor = neighbor0
-                    # created_faces.append(neighbor1)replaced: full tree traversal for now
                 else:
                     neighbor = neighbor1
-                    # created_faces.append(neighbor0)replaced: full tree traversal for now
-                # created_faces.extend(extra_faces) replaced: full tree traversal for now
-                # equal (or higher) levels garantees connectivity (non dangling vertices)
-            neighbor.half_edge.twin = f1.half_edge
-            f1.twin = neighbor.half_edge
-            neighbor.half_edge.next.twin = f0.half_edge
-            f0.twin = neighbor.half_edge.next
+            neighbor0.half_edge.twin = f1.half_edge
+            f1.half_edge.twin = neighbor0.half_edge
+            neighbor1.half_edge.twin = f0.half_edge
+            f0.half_edge.twin = neighbor1.half_edge
+            print("f0: ", f0)
+            print("f1: ", f1)
+            print("n0: ", neighbor0)
+            print("n1: ", neighbor1)
             # else: hypotenuse.twin.face is border so we dgaf
+        else:
+            print("\ntwin is None")
+            print("hyp: ", hyp)
+            print("bisect: ", f0.half_edge.next)
+        plt.title(f"blue twin: {f1.half_edge.twin}")
         return f0, f1 #, created_faces # replaced: full tree traversal for now
 
 
@@ -202,8 +248,8 @@ class Mesh:
         edges={}
 
         def pair(he):
-            key = (id(he.origin), id(he.next.origin))
-            twin_key = (id(he.next.origin), id(he.origin))
+            key = ((he.origin.x,he.origin.y), (he.next.origin.x, he.next.origin.y))
+            twin_key = ((he.next.origin.x, he.next.origin.y), (he.origin.x,he.origin.y))
             if twin_key in edges:
                 twin_he = edges[twin_key]
                 twin_he.twin = he
