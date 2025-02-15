@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import math
 import mesh  # your mesh module with Mesh, Face, Vertex, HalfEdge
+import numpy as np
 
 def draw_face(face,color='black'):
     he = face.half_edge
@@ -9,6 +10,7 @@ def draw_face(face,color='black'):
     start = he
     while True:
         vertices.append((he.origin.x, he.origin.y))
+        plt.scatter(he.face.centroid.x, he.face.centroid.y, color=color)
         he = he.next
         if he == start:
             break
@@ -39,11 +41,13 @@ def plot_mesh(mesh: mesh.Mesh, arrows:bool = False):
         # Get face vertices by traversing the half-edge cycle.
         # if face.half_edge.origin.x==face.half_edge.next.origin.x or face.half_edge:
         #     print("FARTS", face)
+        color = ['red', 'blue', 'green'][face.level % 3]
         he = face.half_edge
         vertices = []
         start = he
         while True:
             vertices.append((he.origin.x, he.origin.y))
+            plt.scatter(he.face.centroid.x, he.face.centroid.y, color=color)
             he = he.next
             if he == start:
                 break
@@ -55,7 +59,6 @@ def plot_mesh(mesh: mesh.Mesh, arrows:bool = False):
         
         # For each half-edge, draw an arrow.
         if arrows:
-            color = ['red', 'blue', 'green'][face.level % 3]
             plt.text(face.centroid.x, face.centroid.y, f"{face.level}", 
                     color=color, fontsize=12, ha='center', va='center')
             for he in face.edge_list:
@@ -90,14 +93,16 @@ def plot_mesh(mesh: mesh.Mesh, arrows:bool = False):
 
 m = mesh.Mesh(2,2, ((0,1), (0,1)))
 
-for i in range(5):
+np.random.seed(0)
+for i in range(8):
     print('\n\n\n', 'active faces: \n',
           m.active_faces,'\n\n\n')
     plt.figure(figsize=(3,3))
     plt.grid()
     plt.axis([0,1,0,1])
-    draw_face(m.active_faces[1])
-    m.refine(m.active_faces[1]);
+    face = np.random.choice(m.active_faces)
+    draw_face(face)
+    m.refine(face);
     plot_mesh(m,arrows=True)
 
 # plot_mesh(m,arrows=True)

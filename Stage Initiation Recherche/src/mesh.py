@@ -11,8 +11,11 @@ def draw_face(face,style='-', color='black',arrows=True):
     he = face.half_edge
     vertices = []
     start = he
-    while True:
+    rgb=['red', 'green', 'blue']
+    for i in range(3):
         vertices.append((he.origin.x, he.origin.y))
+        # plt.scatter(he.face.centroid.x, he.face.centroid.y, color=color)
+        if he.twin: plt.scatter(he.twin.face.centroid.x, he.twin.face.centroid.y, color=rgb[i])
         he = he.next
         if he == start:
             break
@@ -23,7 +26,7 @@ def draw_face(face,style='-', color='black',arrows=True):
         plt.text(face.centroid.x, face.centroid.y, f"{face.level}", 
                 color=color, fontsize=12, ha='center', va='center')
         for i,he in enumerate(face.edge_list):
-            arrow_color = ['red', 'green', 'blue'][i % 3]
+            arrow_color = rgb[i % 3]
             # Compute the midpoint of the half-edge.
             x_start, y_start = he.origin.x, he.origin.y
             x_end, y_end = he.next.origin.x, he.next.origin.y
@@ -46,12 +49,12 @@ def draw_face(face,style='-', color='black',arrows=True):
             plt.arrow(xm_offset, ym_offset, dx, dy, head_width=0.013, head_length=norm*.3,
                     fc=arrow_color, ec=arrow_color, length_includes_head=True)
 
-def draw_edge(he,color='blue'):
+def draw_edge(he,color='blue',style='-'):
     vertices = []
     vertices.append((he.origin.x, he.origin.y))
     vertices.append((he.next.origin.x, he.next.origin.y))
     xs, ys = zip(*vertices)
-    plt.plot(xs, ys, '-', color=color)  # draw triangle boundary in black
+    plt.plot(xs, ys, style, color=color)  # draw triangle boundary in black
 
 @dataclass(slots=True)
 class Vertex:
@@ -166,13 +169,13 @@ class Face:
         f0.half_edge.next.twin=f1.half_edge.next.next
         f1.half_edge.next.next.twin=f0.half_edge.next
 
+        # Pair new hypotenuse to old neighbor
         f0.half_edge.next.next.twin=hyp.next.next.twin
-        if hyp.next.next.twin is not None:
-            hyp.next.next.twin=f0.half_edge.next.next
+        if hyp.next.next.twin: hyp.next.next.twin.twin=f0.half_edge.next.next
 
+        # Pair new hypotenuse to old neighbor
         f1.half_edge.next.twin=hyp.next.twin
-        if hyp.next.twin is not None:
-            hyp.next.twin=f1.half_edge.next
+        if hyp.next.twin: hyp.next.twin.twin=f1.half_edge.next
 
         self.children.extend([f0,f1]) # Congratulations
         f0.parent = f1.parent = self
@@ -181,8 +184,11 @@ class Face:
         plt.grid()
         plt.axis([0,1,0,1])
         # draw_face(self, style='-',color='black',arrows=False)
-        draw_face(f0,style='-',color='red')
-        draw_face(f1,color='blue')
+        # draw_face(f0,style='-',color='red')
+        # draw_face(f1,color='blue')
+        draw_edge(hyp,style='--',color='brown')
+        draw_edge(hyp.next,style='--',color='magenta')
+        draw_face(hyp.next.next.face)
         if common_edge and hyp == common_edge.twin:
             print(f0,f1)
         elif hyp.twin is not None:
@@ -211,7 +217,12 @@ class Face:
             print("\ntwin is None")
             print("hyp: ", hyp)
             print("bisect: ", f0.half_edge.next)
-        plt.title(f"blue twin: {f1.half_edge.twin}")
+        # plt.figure(figsize=(5,5))
+        # plt.grid()
+        # plt.axis([0,1,0,1])
+        # # draw_face(self, style='-',color='black',arrows=False)
+        # draw_face(f0,style='-',color='red')
+        # draw_face(f1,color='blue')
         return f0, f1 #, created_faces # replaced: full tree traversal for now
 
 
