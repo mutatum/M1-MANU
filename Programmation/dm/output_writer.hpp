@@ -30,7 +30,6 @@ void output_writer<T>::write_solution(field<T> solution, std::string loop_counte
     {
         ofs << mesh_.xc(ii) << ' ' << solution(ii) << '\n';
     }
-    ofs << std::endl
-        << std::ends;
+    ofs << std::endl;
     ofs.close();
 }

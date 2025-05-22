@@ -24,7 +24,7 @@ T LF_numerical_flux(T const &ul, T const &ur, T max_vel, Func flux)
  it is more readable and better suited overall (readability, correspondence to the equation formulation ..)
  to have a class that represents both problem and perhaps the numerical flux. 
 
- ##Later: Gemini 2.5 Pro suggested akin to this)
+ ##Later: Gemini 2.5 Pro suggested something akin to this)
 */
 
 template <typename X>
@@ -49,7 +49,7 @@ int main()
 {
     double x_left = 0.; // needed initialization parameters
     double x_right = 15.;
-    size_t Ne = 1500;
+    size_t Ne = 1000;
     double final_time = 6.;
 
 

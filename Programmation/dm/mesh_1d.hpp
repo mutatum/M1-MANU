@@ -39,7 +39,7 @@ mesh_1d<T>::mesh_1d(T x_left, T x_right, size_t n_cells) : cells_center_(std::ve
     assert(x_left < x_right);
     assert(n_cells > 0);
 
-    for (auto ii = 0; ii < n_cells; ii++)
+    for (std::size_t ii = 0; ii < n_cells; ii++)
     {
         this->vertices_coordinate_.at(ii) = x_left + ii * this->dx_;
         this->cells_center_.at(ii) = x_left + (ii+.5) * this->dx_;

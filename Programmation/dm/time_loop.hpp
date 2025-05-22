@@ -31,10 +31,9 @@ public:
 template <typename T, typename X>
 inline void time_loop<T, X>::compute_dt(field<X> &uh)
 {
-    T m{0.};
+    T m{1e-6}; // avoid div by 0
     for (auto value : uh())
-        m = m < std::abs(value) ? std::abs(value) : m;
-    assert(m >= 0.);
+        m = std::max(std::abs(value), m);
 
     this->dt_ = std::min(this->final_time_ - this->physical_time_, // can be 0, shouldn't be negative
                          this->cfl_number_ * (this->mesh_.dx() / m));
